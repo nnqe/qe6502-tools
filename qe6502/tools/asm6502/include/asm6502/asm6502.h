@@ -1000,6 +1000,8 @@ std::vector<mem_value> bootstrap_program(std::uint8_t A,
                                          std::uint8_t P,
                                          std::uint8_t S,
                                          std::uint16_t start_at,
-                                         std::uint16_t reset_vector);
+                                         std::uint16_t reset_vector,
+                                         std::uint16_t brk_irq_vector,
+                                         std::uint16_t nmi_vector);
 
 } // namespace asm6502
