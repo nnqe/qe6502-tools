@@ -1,8 +1,0 @@
-NMI opcode start-boundary float summary
-=======================================
-
-parsed_analyzable_cases: 327
-floating_opcode_count: 40
-not_floating_opcode_count: 203
-skipped_opcode_count: 12
-floating_opcodes: $10 $11 $19 $1C $1D $30 $31 $39 $3C $3D $50 $51 $59 $5C $5D $70 $71 $79 $7C $7D $90 $B0 $B1 $B3 $B9 $BB $BC $BD $BE $BF $D0 $D1 $D9 $DC $DD $F0 $F1 $F9 $FC $FD

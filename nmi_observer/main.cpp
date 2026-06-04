@@ -26,6 +26,7 @@ constexpr std::uint16_t irq_trap = 0xE100u;
 constexpr std::uint16_t nmi_trap = 0xE200u;
 constexpr std::uint32_t pretest_half_cycle_limit = 20000u;
 constexpr int trace_cycles = 20;
+constexpr int default_nmi_hold_cycles = 1;
 constexpr nodenum_t perfect_clk0 = 1171;
 constexpr nodenum_t perfect_nmi = 1297;
 
@@ -33,6 +34,12 @@ struct options {
     std::optional<std::uint8_t> opcode_filter{};
     std::optional<std::uint32_t> testcase_filter{};
     bool traces = true;
+    int nmi_hold_cycles = default_nmi_hold_cycles;
+};
+
+struct nmi_pulse {
+    int assert_before_cycle = 0;
+    int deassert_before_cycle = -1;
 };
 
 struct bus_sample {
@@ -56,8 +63,8 @@ struct testcase_report {
     int boundary_cycle = -1;
     int boundary_cycle_confirm = -1;
     int primary_scan_last_cycle = -1;
-    int primary_last_immediate_cycle = -1;
-    int primary_first_deferred_cycle = -1;
+    int primary_last_immediate = -1;
+    int primary_first_deferred = -1;
 };
 
 bool parse_u32(const char* text, std::uint32_t& out)
@@ -79,10 +86,12 @@ bool parse_u32(const char* text, std::uint32_t& out)
 void print_usage(const char* argv0)
 {
     std::fprintf(stderr,
-        "usage: %s [--opcode XX] [--case N] [--no-traces]\n"
-        "  --opcode XX: run only one opcode, decimal or 0x-prefixed\n"
-        "  --case N:    run only testcase index N within the selected/all opcodes\n"
-        "  --no-traces: print summaries without full 20-cycle timelines\n",
+        "usage: %s [--opcode XX] [--case N] [--no-traces] [--nmi-hold-cycles N]\n"
+        "  --opcode XX:        run only one opcode, decimal or 0x-prefixed\n"
+        "  --case N:           run only testcase index N within the selected/all opcodes\n"
+        "  --no-traces:        print summaries without full 20-cycle timelines\n"
+        "  --nmi-hold-cycles N: keep NMI asserted for N whole-cycle steps after assert; default 1\n"
+        "  --nmi-hold-tests N:  deprecated alias for --nmi-hold-cycles\n",
         argv0);
 }
 
@@ -113,6 +122,17 @@ bool parse_args(int argc, char** argv, options& out)
             out.testcase_filter = value;
         } else if (std::strcmp(argv[i], "--no-traces") == 0) {
             out.traces = false;
+        } else if (std::strcmp(argv[i], "--nmi-hold-cycles") == 0 || std::strcmp(argv[i], "--nmi-hold-tests") == 0) {
+            if (i + 1 >= argc) {
+                print_usage(argv[0]);
+                return false;
+            }
+            std::uint32_t value = 0;
+            if (!parse_u32(argv[++i], value) || value == 0u || value > 1000u) {
+                std::fprintf(stderr, "invalid nmi hold cycle count: %s\n", argv[i]);
+                return false;
+            }
+            out.nmi_hold_cycles = static_cast<int>(value);
         } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
             std::exit(EXIT_SUCCESS);
@@ -277,7 +297,7 @@ bool align_to_test_start(state_t* perfect, std::uint16_t start_at)
     return false;
 }
 
-trace_result run_trace(const testcase& test, std::optional<int> inject_before_cycle)
+trace_result run_trace(const testcase& test, std::optional<nmi_pulse> pulse)
 {
     load_clean_memory(test);
     state_t* perfect = initAndResetChip();
@@ -292,9 +312,11 @@ trace_result run_trace(const testcase& test, std::optional<int> inject_before_cy
     result.samples.reserve(static_cast<std::size_t>(trace_cycles));
 
     for (int cycle_index = 0; cycle_index < trace_cycles; ++cycle_index) {
-        if (inject_before_cycle.has_value() && *inject_before_cycle == cycle_index) {
+        if (pulse.has_value() && pulse->assert_before_cycle == cycle_index) {
             setNode(perfect, perfect_nmi, 0);
-            recalcNodeList(perfect);
+        }
+        if (pulse.has_value() && pulse->deassert_before_cycle == cycle_index) {
+            setNode(perfect, perfect_nmi, 1);
         }
 
         if (!perfect_next_step_is_memory_half(perfect)) {
@@ -311,6 +333,16 @@ trace_result run_trace(const testcase& test, std::optional<int> inject_before_cy
 
     destroyChip(perfect);
     return result;
+}
+
+trace_result run_trace_assert_held(const testcase& test, int inject_before_cycle)
+{
+    return run_trace(test, nmi_pulse{inject_before_cycle, -1});
+}
+
+trace_result run_trace_pulse(const testcase& test, int inject_before_cycle, int hold_cycles)
+{
+    return run_trace(test, nmi_pulse{inject_before_cycle, inject_before_cycle + hold_cycles});
 }
 
 const char* classification_text(int diff_cycle, int boundary_cycle)
@@ -332,6 +364,7 @@ const char* classification_text(int diff_cycle, int boundary_cycle)
 
 bool should_run_opcode(const options& opts, std::uint8_t opcode)
 {
+    return true;
     if (opcode == 0x00u) {
         return false;
     }
@@ -389,8 +422,8 @@ testcase_report run_testcase(const testcase& test, std::uint32_t index, const op
         return report;
     }
 
-    const trace_result early0 = run_trace(test, 0);
-    const trace_result early1 = run_trace(test, 0);
+    const trace_result early0 = run_trace_assert_held(test, 0);
+    const trace_result early1 = run_trace_assert_held(test, 0);
     if (!early0.aligned || !early1.aligned) {
         std::printf("  ERROR: failed to align during early-NMI boundary discovery\n");
         return report;
@@ -416,60 +449,77 @@ testcase_report run_testcase(const testcase& test, std::uint32_t index, const op
     const int primary_scan_last = std::min(trace_cycles - 1, static_cast<int>(test.expected_cycles));
     report.primary_scan_last_cycle = primary_scan_last;
 
-    std::printf("  injection_scan_current_instruction_plus_reserve: inject_range=0..%02d metadata_cycles=%u\n",
+    std::printf("  injection_scan_current_instruction_plus_reserve: inject_range=0..%02d metadata_cycles=%u nmi_hold_cycles=%d\n",
         primary_scan_last,
-        static_cast<unsigned>(test.expected_cycles));
+        static_cast<unsigned>(test.expected_cycles),
+        opts.nmi_hold_cycles);
     for (int inject_cycle = 0; inject_cycle <= primary_scan_last; ++inject_cycle) {
-        const trace_result observed = run_trace(test, inject_cycle);
+        const int deassert_cycle = inject_cycle + opts.nmi_hold_cycles;
+        const trace_result observed = run_trace_pulse(test, inject_cycle, opts.nmi_hold_cycles);
         if (!observed.aligned) {
-            std::printf("    inject_before_cycle=%02d aligned=no\n", inject_cycle);
+            std::printf("    inject_before_cycle=%02d hold_cycles=%02d deassert_before_cycle=%02d aligned=no\n",
+                inject_cycle,
+                opts.nmi_hold_cycles,
+                deassert_cycle);
             continue;
         }
         const int diff = first_diff_cycle(baseline0.samples, observed.samples);
         const char* classification = classification_text(diff, report.boundary_cycle);
-        std::printf("    inject_before_cycle=%02d first_diff_cycle=%d classification=%s\n",
+        std::printf("    inject_before_cycle=%02d hold_cycles=%02d deassert_before_cycle=%02d first_diff_cycle=%d classification=%s\n",
             inject_cycle,
+            opts.nmi_hold_cycles,
+            deassert_cycle,
             diff,
             classification);
         if (std::strcmp(classification, "immediate") == 0) {
-            report.primary_last_immediate_cycle = inject_cycle;
-        } else if (std::strcmp(classification, "deferred") == 0 && report.primary_first_deferred_cycle < 0) {
-            report.primary_first_deferred_cycle = inject_cycle;
+            report.primary_last_immediate = inject_cycle;
+        } else if (std::strcmp(classification, "deferred") == 0
+            && report.primary_first_deferred < 0) {
+            report.primary_first_deferred = inject_cycle;
         }
         if (opts.traces) {
             print_trace_diff_window(baseline0.samples, observed.samples, diff);
         }
     }
 
-    std::printf("  testcase_classification_summary: primary_scan=0..%02d last_immediate=", primary_scan_last);
-    if (report.primary_last_immediate_cycle >= 0) {
-        std::printf("%02d", report.primary_last_immediate_cycle);
+    std::printf("  testcase_classification_summary: primary_scan=0..%02d hold_cycles=%02d last_immediate=",
+        primary_scan_last,
+        opts.nmi_hold_cycles);
+    if (report.primary_last_immediate >= 0) {
+        std::printf("%02d", report.primary_last_immediate);
     } else {
         std::printf("-");
     }
     std::printf(" first_deferred=");
-    if (report.primary_first_deferred_cycle >= 0) {
+    if (report.primary_first_deferred >= 0) {
         std::printf("%02d cycles_from_metadata_end=%d",
-            report.primary_first_deferred_cycle,
-            static_cast<int>(test.expected_cycles) - report.primary_first_deferred_cycle);
+            report.primary_first_deferred,
+            static_cast<int>(test.expected_cycles) - report.primary_first_deferred);
     } else {
         std::printf("-");
     }
     std::printf("\n");
 
     if (primary_scan_last + 1 < trace_cycles) {
-        std::printf("  post_instruction_nop_stream_scan: inject_range=%02d..%02d\n",
+        std::printf("  post_instruction_nop_stream_scan: inject_range=%02d..%02d nmi_hold_cycles=%d\n",
             primary_scan_last + 1,
-            trace_cycles - 1);
+            trace_cycles - 1,
+            opts.nmi_hold_cycles);
         for (int inject_cycle = primary_scan_last + 1; inject_cycle < trace_cycles; ++inject_cycle) {
-            const trace_result observed = run_trace(test, inject_cycle);
+            const int deassert_cycle = inject_cycle + opts.nmi_hold_cycles;
+            const trace_result observed = run_trace_pulse(test, inject_cycle, opts.nmi_hold_cycles);
             if (!observed.aligned) {
-                std::printf("    inject_before_cycle=%02d aligned=no\n", inject_cycle);
+                std::printf("    inject_before_cycle=%02d hold_cycles=%02d deassert_before_cycle=%02d aligned=no\n",
+                    inject_cycle,
+                    opts.nmi_hold_cycles,
+                    deassert_cycle);
                 continue;
             }
             const int diff = first_diff_cycle(baseline0.samples, observed.samples);
-            std::printf("    inject_before_cycle=%02d first_diff_cycle=%d classification=%s\n",
+            std::printf("    inject_before_cycle=%02d hold_cycles=%02d deassert_before_cycle=%02d first_diff_cycle=%d classification=%s\n",
                 inject_cycle,
+                opts.nmi_hold_cycles,
+                deassert_cycle,
                 diff,
                 classification_text(diff, report.boundary_cycle));
             if (opts.traces) {
@@ -487,16 +537,17 @@ void print_final_summary(const std::vector<testcase_report>& reports)
     std::printf("  testcases_run: %zu\n", reports.size());
 
     std::array<std::vector<int>, 256> boundaries{};
-    std::array<std::vector<int>, 256> first_deferred{};
-    std::array<std::vector<int>, 256> deferred_from_end{};
+    std::array<std::vector<int>, 256> first_deferred_by_opcode{};
+    std::array<std::vector<int>, 256> deferred_from_end_by_opcode{};
+
     for (const testcase_report& report : reports) {
         if (report.baseline_reproducible && report.boundary_reproducible && report.boundary_cycle >= 0) {
             boundaries[report.opcode].push_back(report.boundary_cycle);
         }
-        if (report.primary_first_deferred_cycle >= 0) {
-            first_deferred[report.opcode].push_back(report.primary_first_deferred_cycle);
-            deferred_from_end[report.opcode].push_back(
-                static_cast<int>(report.metadata_cycles) - report.primary_first_deferred_cycle);
+        if (report.primary_first_deferred >= 0) {
+            first_deferred_by_opcode[report.opcode].push_back(report.primary_first_deferred);
+            deferred_from_end_by_opcode[report.opcode].push_back(
+                static_cast<int>(report.metadata_cycles) - report.primary_first_deferred);
         }
     }
 
@@ -508,11 +559,11 @@ void print_final_summary(const std::vector<testcase_report>& reports)
         std::sort(boundary_values.begin(), boundary_values.end());
         boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());
 
-        std::vector<int> deferred_values = first_deferred[opcode];
+        std::vector<int> deferred_values = first_deferred_by_opcode[opcode];
         std::sort(deferred_values.begin(), deferred_values.end());
         deferred_values.erase(std::unique(deferred_values.begin(), deferred_values.end()), deferred_values.end());
 
-        std::vector<int> from_end_values = deferred_from_end[opcode];
+        std::vector<int> from_end_values = deferred_from_end_by_opcode[opcode];
         std::sort(from_end_values.begin(), from_end_values.end());
         from_end_values.erase(std::unique(from_end_values.begin(), from_end_values.end()), from_end_values.end());
 
@@ -522,12 +573,18 @@ void print_final_summary(const std::vector<testcase_report>& reports)
         }
         std::printf("%s", boundary_values.size() == 1u ? " stable-across-reported-testcases" : " varies-across-testcases");
 
-        if (!deferred_values.empty()) {
-            std::printf(" first_deferred_cycles=");
+        std::printf(" first_deferred=");
+        if (deferred_values.empty()) {
+            std::printf("-");
+        } else {
             for (std::size_t i = 0; i < deferred_values.size(); ++i) {
                 std::printf("%s%d", i == 0u ? "" : ",", deferred_values[i]);
             }
-            std::printf(" cycles_from_metadata_end=");
+        }
+        std::printf(" cycles_from_metadata_end=");
+        if (from_end_values.empty()) {
+            std::printf("-");
+        } else {
             for (std::size_t i = 0; i < from_end_values.size(); ++i) {
                 std::printf("%s%d", i == 0u ? "" : ",", from_end_values[i]);
             }
@@ -554,6 +611,8 @@ int app_main(int argc, char** argv)
     std::printf("nmi_observer: each trace records %d whole cycles after first read from testcase.start_at\n",
         trace_cycles);
     std::printf("nmi_observer: primary injection scan is 0..metadata_cycles inclusive; later cycles are reported separately as post-instruction NOP-stream checks\n");
+    std::printf("nmi_observer: for each inject cycle, NMI is deasserted after %d whole-cycle step(s); use --nmi-hold-cycles N to change this\n",
+        opts.nmi_hold_cycles);
 
     for (const auto& [opcode, cases] : testcases) {
         if (!should_run_opcode(opts, opcode)) {
