@@ -729,11 +729,11 @@ static qe6502_tick_t mc_latch_pch_reset_fetch(qe6502_t* cpu, uint8_t bus)
 static qe6502_tick_t mc_latch_pch_nmi_fetch(qe6502_t* cpu, uint8_t bus)
 {
     cpu->PC = u16_set_byte(cpu->PC, 1, bus);
-    if(flag(cpu->interrupts, qe6502_interrupt_nmi_inv_pin) == 0)
-    {
-        cpu->interrupts = flag_off(cpu->interrupts, qe6502_interrupt_nmi_edge);
-    }
-    update_nmi_last_sampled(cpu);
+    // if(flag(cpu->interrupts, qe6502_interrupt_nmi_inv_pin) == 0)
+    // {
+    //     cpu->interrupts = flag_off(cpu->interrupts, qe6502_interrupt_nmi_edge);
+    // }
+    //update_nmi_last_sampled(cpu);
     return fetch(cpu);
 }
 
@@ -944,6 +944,7 @@ static inline qe6502_tick_t mc_nmos_nmi_c5_vec_hi(qe6502_t* cpu, uint8_t bus)
 {
     nmos_interrupt_vector_low(cpu, bus);
     cpu->interrupts = flag_off(cpu->interrupts, qe6502_interrupt_sampling_off);
+    update_nmi_last_sampled(cpu);
 
     return read(cpu, 0xfffbu);
 }
