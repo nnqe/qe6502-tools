@@ -20,6 +20,7 @@ option(QE6502_BUILD_SHARED "Build the stable shared qe6502 ABI library" ON)
 option(QE6502_BUILD_CPP "Build the qe6502 C++ wrapper" ON)
 option(QE6502_BUILD_TESTS "Build qe6502 tests and harnesses" ${QE6502_DEFAULT_BUILD_TESTS})
 option(QE6502_ENABLE_WERROR "Treat qe6502 warnings as errors" OFF)
+option(QE6502_GENERATE_ASSEMBLY "Generate compiler assembly/intermediate files for inspection" OFF)
 option(QE6502_INSTALL "Install qe6502 headers, libraries and package metadata" ${QE6502_DEFAULT_INSTALL})
 
 if(QE6502_BUILD_WASM AND NOT QE6502_BUILD_STATIC)
@@ -49,6 +50,15 @@ if(QE6502_BUILD_TESTS AND QE6502_BUILD_WASM AND NOT QE6502_BUILD_STATIC)
     message(FATAL_ERROR "WASM QE6502_BUILD_TESTS requires QE6502_BUILD_STATIC")
 endif()
 
+if(QE6502_GENERATE_ASSEMBLY)
+    add_compile_options(
+        $<$<COMPILE_LANG_AND_ID:C,GNU,Clang,AppleClang>:-save-temps=obj>
+        $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-save-temps=obj>
+        $<$<COMPILE_LANG_AND_ID:C,GNU,Clang,AppleClang>:-fverbose-asm>
+        $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-fverbose-asm>
+    )
+endif()
+
 function(qe6502_configure_warnings target)
     if(MSVC)
         target_compile_options(${target} PRIVATE
@@ -74,6 +84,7 @@ message(STATUS "  QE6502_BUILD_SHARED      = ${QE6502_BUILD_SHARED}")
 message(STATUS "  QE6502_BUILD_CPP         = ${QE6502_BUILD_CPP}")
 message(STATUS "  QE6502_BUILD_TESTS       = ${QE6502_BUILD_TESTS}")
 message(STATUS "  QE6502_ENABLE_WERROR     = ${QE6502_ENABLE_WERROR}")
+message(STATUS "  QE6502_GENERATE_ASSEMBLY = ${QE6502_GENERATE_ASSEMBLY}")
 message(STATUS "  QE6502_INSTALL           = ${QE6502_INSTALL}")
 
 add_subdirectory(cpu)

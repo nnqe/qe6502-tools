@@ -16,6 +16,7 @@ file(GLOB_RECURSE tools6502_sources CONFIGURE_DEPENDS
 )
 list(FILTER tools6502_sources EXCLUDE REGEX [[/tests/]])
 list(FILTER tools6502_sources EXCLUDE REGEX [[/cpu6502_bridge/tools/]])
+list(FILTER tools6502_sources EXCLUDE REGEX [[/hello_world/]])
 
 file(GLOB_RECURSE tools6502_headers CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/*.hpp
@@ -24,6 +25,7 @@ file(GLOB_RECURSE tools6502_headers CONFIGURE_DEPENDS
 )
 list(FILTER tools6502_headers EXCLUDE REGEX [[/tests/]])
 list(FILTER tools6502_headers EXCLUDE REGEX [[/cpu6502_bridge/tools/]])
+list(FILTER tools6502_headers EXCLUDE REGEX [[/hello_world/]])
 
 add_library(tools6502 STATIC
     ${tools6502_sources}
@@ -112,3 +114,13 @@ add_executable(cpu6502_bridge_fetch_compare
 target_link_libraries(cpu6502_bridge_fetch_compare PRIVATE tools6502::tools6502)
 qe6502_configure_warnings(cpu6502_bridge_fetch_compare)
 target_compile_features(cpu6502_bridge_fetch_compare PRIVATE cxx_std_17)
+
+add_executable(tools6502_hello_world
+    hello_world/hello_world.cpp
+)
+target_link_libraries(tools6502_hello_world PRIVATE
+    tools6502::tools6502
+    qe6502::static
+)
+qe6502_configure_warnings(tools6502_hello_world)
+target_compile_features(tools6502_hello_world PRIVATE cxx_std_17)

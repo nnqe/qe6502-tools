@@ -4,6 +4,8 @@
 #include <lockstep.hpp>
 #include <tools6502/testcase_collections.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -42,6 +44,29 @@ struct OpcodeStats
     std::size_t failures = 0u;
 };
 
+constexpr std::array<std::uint8_t, 16u> light_opcodes{
+    0x00, // BRK: interrupt/vector entry
+    0x01, // ORA (zp,X): indexed-indirect read
+    0x06, // ASL zp: read-modify-write memory
+    0x08, // PHP: stack push
+    0x20, // JSR abs: control flow plus stack writes
+    0x24, // BIT zp: flag-only memory read
+    0x29, // AND #imm: ALU immediate
+    0x40, // RTI: interrupt return stack pull
+    0x4C, // JMP abs: absolute control transfer
+    0x60, // RTS: subroutine return stack pull
+    0x69, // ADC #imm: carry/arithmetic
+    0x85, // STA zp: memory write
+    0xA9, // LDA #imm: load immediate
+    0xB0, // BCS: conditional branch timing variants
+    0xE9, // SBC #imm: subtract/arithmetic
+    0xEA, // NOP: implied idle instruction
+};
+
+bool is_light_opcode(std::uint8_t opcode) noexcept
+{
+    return std::find(light_opcodes.begin(), light_opcodes.end(), opcode) != light_opcodes.end();
+}
 
 bool is_unstable_opcode(std::uint8_t opcode) noexcept
 {
@@ -124,8 +149,20 @@ bool run_one_scenario(tools6502::LockstepScenarioRunner& runner,
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    bool light = false;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--light") {
+            light = true;
+            continue;
+        }
+
+        std::cerr << "usage: " << argv[0] << " [--light]\n";
+        return 2;
+    }
+
     const auto testcases_by_opcode = tools6502::get_nmos6502_opcode_testcases();
 
     tools6502::LockstepConfig base_lockstep_config{};
@@ -139,7 +176,15 @@ int main()
     SweepStats stats{};
     FirstFailure first_failure{};
 
+    std::cout << "nmi_irq_pulse_sweep mode: "
+              << (light ? "light (16 representative opcodes)" : "full (all opcodes)")
+              << '\n' << std::flush;
+
     for (const auto& [opcode, tests] : testcases_by_opcode) {
+        if (light && !is_light_opcode(opcode)) {
+            continue;
+        }
+
         ++stats.opcodes_total;
         stats.testcases_total += tests.size();
 

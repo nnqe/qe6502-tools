@@ -1,8 +1,8 @@
 # qe6502
 
-`qe6502` is a cycle-exact 6502/65C02 CPU emulator core with a cycle-oriented bus interface. It provides a small native C API, a stable shared-library ABI surface, a C++17 wrapper, and optional JavaScript/WebAssembly bindings.
+`qe6502` is a small, embeddable 6502/65C02 CPU emulator core built around an explicit external bus interface. The host owns memory and devices, services one bus request at a time, and feeds read data back on the following tick.
 
-The core is organized around explicit bus ticks. The caller owns memory and devices, services one bus request at a time, and passes the read byte back to the CPU on the next tick. `qe6502` is a CPU core, not a complete machine emulator.
+The core focuses on deterministic bus-level behavior, low integration overhead, and stable integration surfaces for C, C++, JavaScript/WebAssembly, and other FFI users. `qe6502` is a CPU core, not a complete machine emulator.
 
 The fast native C API keeps the complete CPU state in a 16-byte `qe6502_t`. The stable ABI API uses a fixed 64-byte opaque context, and save/load snapshots are also fixed at 64 bytes.
 
@@ -18,7 +18,59 @@ The public model constants cover:
 - Rockwell 65C02
 - Synertek 65C02
 
-The selected model controls the opcode matrix, bus-cycle behavior, and CPU-specific instruction behavior used by the core.
+The selected model controls the opcode matrix, bus-cycle behavior, interrupt behavior, and CPU-specific instruction behavior used by the core.
+
+## Execution model
+
+`qe6502` is driven one external bus phase at a time.
+
+Each tick returned by the CPU describes the next externally visible bus request:
+
+- the 16-bit bus address;
+- the current data bus value;
+- status flags such as read/write, opcode fetch, internal restart sequence, and CPU jammed state.
+
+For write cycles, the host stores the outgoing bus byte into its memory or device map. For read cycles, the host loads a byte from its memory or device map and passes that byte into the next CPU tick.
+
+This keeps the CPU core independent from any particular machine memory layout, mapper, peripheral model, or timing scheduler.
+
+## NMOS/NES accuracy
+
+The NMOS and NES models are validated against `perfect6502` and the SingleStepTests 65x02 corpus.
+
+For all stable instructions, including illegal opcodes with stable behavior, there are currently no known mismatches in externally visible cycle-by-cycle bus behavior. Interrupt behavior is also expected to match `perfect6502` for the covered IRQ/NMI scenarios, including overlap, hijacking, lost-NMI windows, NMI edge lifetime, and arbitration details.
+
+The only intentional differences from `perfect6502` are seven unstable illegal opcodes, for which `qe6502` follows the SingleStepTests data instead:
+
+| Opcode | Mnemonic |
+| ---: | --- |
+| `0x0B` | `ANC #imm` |
+| `0x2B` | `ANC #imm` |
+| `0x4B` | `ALR #imm` |
+| `0x6B` | `ARR #imm` |
+| `0x8B` | `XAA #imm` |
+| `0xAB` | `LXA #imm` |
+| `0xBB` | `LAS abs,Y` |
+
+For these specific unstable cases, the SingleStepTests data is treated as the more reliable reference.
+
+## Interrupt pins
+
+IRQ and NMI are exposed as external CPU pins. The caller drives those pins just like an emulated machine would drive the real processor lines.
+
+IRQ is level-sensitive. NMI is edge-sensitive. The exact bus tick on which a pin changes state is observable and can affect the following interrupt sequence.
+
+For the NMOS 6502 model, the interrupt path is designed to match the subtle behavior observed in `perfect6502`, including IRQ/NMI overlap, BRK/NMI hijacking, NMI edge lifetime, lost-NMI timing windows, and related arbitration cases.
+
+```c
+qe6502_irq_assert(&cpu, 1); /* assert IRQ */
+qe6502_irq_assert(&cpu, 0); /* deassert IRQ */
+
+qe6502_nmi_assert(&cpu, 1); /* assert NMI */
+qe6502_nmi_assert(&cpu, 0); /* deassert NMI */
+```
+
+Keep a line asserted for as long as the emulated device drives it active.
 
 ## Which API should I use?
 
@@ -52,6 +104,14 @@ Use the **C++ wrapper** when writing C++17 code and you want a small RAII-style 
 target_link_libraries(my_program PRIVATE qe6502::cpp)
 ```
 
+Use the **JavaScript/WebAssembly binding** when running the ABI-backed CPU core from Node.js or a browser.
+
+```js
+import { loadQe6502Node, Model } from "./qe6502.js";
+```
+
+All public integration layers expose the same basic model: create a CPU context, select a CPU model, start with `restart`, then service one external bus request per tick.
+
 ## Vendoring into another CMake project
 
 The most direct integration is to vendor this repository and add it as a subdirectory. In subproject builds, tests and install rules are off by default; the options below make that explicit.
@@ -65,16 +125,6 @@ target_link_libraries(my_emulator PRIVATE qe6502::static)
 # or:
 # target_link_libraries(my_emulator PRIVATE qe6502::cpp)
 ```
-
-## Status
-
-`qe6502` is pre-1.0 and under active development.
-
-The first official public release is currently targeted for October 2026, subject to
-API/ABI stabilization and completion of the current correctness baseline.
-
-The core project currently includes C, C++, ABI, and WebAssembly integration
-surfaces. Additional Python, C#, and Rust bindings are planned/in progress.
 
 ## Build from source
 
@@ -121,15 +171,15 @@ Available installed targets depend on the build options:
 
 ## Build options
 
-| Option                 |                                           Default | Meaning                                                                             |
-| ---------------------- | ------------------------------------------------: | ----------------------------------------------------------------------------------- |
-| `QE6502_BUILD_STATIC`  |                                              `ON` | Build the fast static C library.                                                    |
-| `QE6502_BUILD_SHARED`  |                                              `ON` | Build the stable shared ABI library.                                                |
-| `QE6502_BUILD_CPP`     |                                              `ON` | Build and install the C++ wrapper. Requires `QE6502_BUILD_STATIC=ON`.               |
-| `QE6502_BUILD_TESTS`   | `${BUILD_TESTING}` top-level, `OFF` as subproject | Build tests and harnesses. Turn this off for dependency/package builds.             |
-| `QE6502_BUILD_WASM`    |                                             `OFF` | Enable the WebAssembly build mode.                                                  |
-| `QE6502_ENABLE_WERROR` |                                             `OFF` | Treat warnings as errors. Intended for maintainer/CI builds, not package consumers. |
-| `QE6502_INSTALL`       |               `ON` top-level, `OFF` as subproject | Install headers, libraries, CMake package files, and pkg-config files.              |
+| Option | Default | Meaning |
+| --- | ---: | --- |
+| `QE6502_BUILD_STATIC` | `ON` | Build the fast static C library. |
+| `QE6502_BUILD_SHARED` | `ON` | Build the stable shared ABI library. |
+| `QE6502_BUILD_CPP` | `ON` | Build and install the C++ wrapper. Requires `QE6502_BUILD_STATIC=ON`. |
+| `QE6502_BUILD_TESTS` | `${BUILD_TESTING}` top-level, `OFF` as subproject | Build tests and harnesses. Turn this off for dependency/package builds. |
+| `QE6502_BUILD_WASM` | `OFF` | Enable the WebAssembly build mode. |
+| `QE6502_ENABLE_WERROR` | `OFF` | Treat warnings as errors. Intended for maintainer/CI builds, not package consumers. |
+| `QE6502_INSTALL` | `ON` top-level, `OFF` as subproject | Install headers, libraries, CMake package files, and pkg-config files. |
 
 For a dependency-style build without harnesses:
 
@@ -158,7 +208,11 @@ The pkg-config files are generated only for the corresponding enabled build prod
 ## Minimal C example
 
 ```c
+#include <stdint.h>
 #include <qe6502/qe6502.h>
+
+static uint8_t memory_read(uint16_t address);
+static void memory_write(uint16_t address, uint8_t value);
 
 int main(void)
 {
@@ -166,14 +220,14 @@ int main(void)
     cpu.model = qe6502_model_nmos;
 
     qe6502_tick_t tick = qe6502_restart(&cpu);
-    unsigned char input = 0;
+    uint8_t input = 0;
 
     for (;;) {
         if ((tick.status & qe6502_status_writing) != 0u) {
-            /* Store tick.bus at tick.address in your memory/device map. */
-        } else {
-            /* Load input from tick.address in your memory/device map. */
+            memory_write(tick.address, tick.bus);
             input = 0;
+        } else {
+            input = memory_read(tick.address);
         }
 
         tick = qe6502_tick(&cpu, input);
@@ -181,32 +235,36 @@ int main(void)
 }
 ```
 
+`qe6502_restart()` prepares the first bus request. On each iteration, writes store the outgoing bus byte, while reads load a byte from the caller's memory/device map and pass it to `qe6502_tick()`.
+
 ## Minimal C++ example
 
 ```cpp
+#include <cstdint>
 #include <qe6502/cpu.hpp>
+
+std::uint8_t memory_read(std::uint16_t address);
+void memory_write(std::uint16_t address, std::uint8_t value);
 
 int main()
 {
     qe6502::cpu cpu(qe6502::model::nmos);
 
     cpu.restart();
-    unsigned char input = 0;
+    std::uint8_t input = 0;
 
     for (;;) {
         if (cpu.is_write()) {
-            /* Store cpu.bus_data() at cpu.bus_address() in your memory/device map. */
-        } else {
-            /* Load input from cpu.bus_address() in your memory/device map. */
+            memory_write(cpu.bus_address(), cpu.bus_data());
             input = 0;
+        } else {
+            input = memory_read(cpu.bus_address());
         }
 
         cpu.tick(input);
     }
 }
 ```
-
-The CPU does not own memory. `restart()` prepares the first bus request. On each iteration, writes store the outgoing bus byte, while reads load a byte from the caller's memory/device map and pass it to `tick(input)`.
 
 ## Minimal JavaScript / WebAssembly example
 
@@ -222,10 +280,10 @@ try {
 
   for (;;) {
     if (cpu.isWrite()) {
-      /* Store cpu.busData() at cpu.busAddress() in your memory/device map. */
-    } else {
-      /* Load input from cpu.busAddress() in your memory/device map. */
+      memoryWrite(cpu.busAddress(), cpu.busData());
       input = 0;
+    } else {
+      input = memoryRead(cpu.busAddress());
     }
 
     cpu.tick(input);
@@ -240,14 +298,11 @@ The JavaScript wrapper exposes the same bus-driven execution model as the C and 
 Interrupt input pins are controlled explicitly through assert/deassert calls:
 
 ```js
-cpu.irqAssert(true);          // assert the IRQ line
-cpu.irqAssert(false);          // deassert the IRQ line
+cpu.irqAssert(true);  // assert the IRQ line
+cpu.irqAssert(false); // deassert the IRQ line
 
-cpu.nmiAssert(true);          // assert the NMI line
-cpu.nmiAssert(false);          // deassert the NMI line
-
-console.log(cpu.isIrqAsserted());
-console.log(cpu.isNmiAsserted());
+cpu.nmiAssert(true);  // assert the NMI line
+cpu.nmiAssert(false); // deassert the NMI line
 ```
 
 `nmiAssert()` is a pin-level API, not a one-shot pulse helper. Keep the line asserted for as long as your emulated device drives it active, then deassert it.
@@ -256,7 +311,7 @@ console.log(cpu.isNmiAsserted());
 
 `qe6502` supports a stable fixed-size 64-byte save/load snapshot format. A snapshot captures the complete CPU state, including the current internal bus-cycle phase, so restored execution resumes deterministically rather than only restoring the visible registers.
 
-The same snapshot format is exposed through the native C API, the stable ABI API, the C++ wrapper, and the JavaScript/WASM binding, so snapshots can be shared between bindings that use the same snapshot format. For stable ABI consumers, the reference entry points are `qe6502abi_save()` and `qe6502abi_load()`.
+The same snapshot format is exposed through the native C API, the stable ABI API, the C++ wrapper, and the JavaScript/WASM binding, so snapshots can be shared between bindings that use the same snapshot format.
 
 A small C++ wrapper example:
 
@@ -271,53 +326,15 @@ qe6502::cpu_snapshot snapshot = cpu.save();
 qe6502::cpu restored(snapshot);
 ```
 
-## Correctness testing
+## Testing
 
-`qe6502` uses several complementary tests and harnesses:
+The repository includes regression harnesses for instruction behavior, bus timing, save/load replay, JavaScript/WASM bindings, ABI surface stability, and NMOS interrupt lockstep scenarios.
 
-- Klaus2m5 functional ROM tests for supported 6502/65C02 CPU models.
-- SingleStepTests/ProcessorTests instruction tests, checked cycle by cycle against memory bus activity and final CPU/register state.
-- `netlist_lockstep` tests against `perfect6502` as an NMOS 6502 netlist/bus-timing oracle.
-- Save/load replay tests that checkpoint and restore execution during long-running test programs.
+The NMOS interrupt implementation is checked against `perfect6502` through lockstep tests that compare externally visible bus behavior tick by tick. These tests cover IRQ/NMI timing, I-flag windows, interrupt arbitration, hijacking cases, and lost-NMI scenarios.
 
-The original SingleStepTests/ProcessorTests repository is at <https://github.com/SingleStepTests/ProcessorTests>. The current 65x02 test packages used by the browser manual runner are at <https://github.com/SingleStepTests/65x02>.
+The test suite is intended to be useful both as a regression suite for `qe6502` itself and as documentation for the expected external bus behavior.
 
-The ProcessorTests data is not vendored in this repository because the complete test corpus is large. It can be run in two ways:
-
-1. Download the ProcessorTests/65x02 JSON packages locally and run the native single-step runner.
-2. Build the JavaScript/WASM manual harness and run the SingleStepTests browser runner against either GitHub-hosted raw test data or local JSON files.
-
-Example native single-step commands after a native release build:
-
-```sh
-./build/release/harness/singlestep/singlestep --model nmos --path /path/to/65x02/6502/v1 --all
-./build/release/harness/singlestep/singlestep --model nes  --path /path/to/65x02/nes6502/v1 --all
-./build/release/harness/singlestep/singlestep --model wdc  --path /path/to/65x02/wdc65c02/v1 --all
-./build/release/harness/singlestep/singlestep --model rw   --path /path/to/65x02/rockwell65c02/v1 --all
-./build/release/harness/singlestep/singlestep --model st   --path /path/to/65x02/synertek65c02/v1 --all
-```
-
-Example browser/manual flow:
-
-```sh
-cmake --preset release_wasm
-cmake --build --preset release_wasm
-python3 -m http.server -d build/release_wasm/harness/js_manual 8000
-```
-
-Then open `http://localhost:8000/` and choose the SingleStepTests runner. The page can fetch the test data from GitHub or load local `00.json` .. `ff.json` files.
-
-`netlist_lockstep` compares `qe6502` against <https://github.com/mist64/perfect6502>. `perfect6502` simulates the original NMOS 6502 netlist, so the lockstep harness is used as a bus-timing reference for selected NMOS 6502 scenarios.
-
-Some undocumented NMOS opcodes have unstable or implementation-sensitive final register behavior. For `0x0B`, `0x2B`, `0x4B`, `0x6B`, `0x8B`, `0xAB`, and `0xBB`, `qe6502` favors compatibility with SingleStepTests/ProcessorTests 6502 final register state rather than matching `perfect6502` in the lockstep oracle.
-
-## Interrupt behavior notes
-
-`qe6502` implements the normal IRQ and NMI behavior expected by software. Some transistor-level interrupt corner cases are intentionally not modeled exactly in order to keep the CPU hot path small and fast. In particular, `qe6502` does not claim exact behavior for BRK hijacking or NMI-loss edge cases.
-
-## Tests and harnesses
-
-Tests and harnesses are built only when `QE6502_BUILD_TESTS=ON`. Maintainer presets enable both tests and warning-as-error mode:
+Maintainer presets enable tests and warning-as-error mode:
 
 ```sh
 cmake --preset debug_native
@@ -337,7 +354,33 @@ cmake --build --preset release_wasm
 ctest --test-dir build/release_wasm --output-on-failure
 ```
 
+The browser/manual harness can run smoke tests, Klaus2m5, and SingleStepTests interactively:
+
+```sh
+cmake --preset release_wasm
+cmake --build --preset release_wasm
+python3 -m http.server -d build/release_wasm/harness/js_manual 8000
+```
+
+Then open `http://localhost:8000/` and choose the desired runner.
+
 Package users should normally keep `QE6502_BUILD_TESTS=OFF` and `QE6502_ENABLE_WERROR=OFF`.
+
+## Related project: qe6502-benchmark
+
+The separate [`qe6502-benchmark`](https://github.com/nikolaynedelchev/qe6502-benchmark) repository is a companion comparison of 6502-family CPU cores across correctness, cycle timing, host-visible bus behavior, model coverage, performance, portability, and integration trade-offs.
+
+It is not required in order to use `qe6502`, but it provides useful context for the design choices made here. In the supplied benchmark snapshot, `qe6502` has full SingleStep instruction, cycle-count, and bus-trace correctness across all supported CPU models, while also ranking among the faster cores in the Klaus benchmark results for both NMOS and 65C02 configurations.
+
+The exact performance numbers in that repository should be read as measurements for its specific benchmark environment, not as universal hardware-independent speeds.
+
+## Status
+
+`qe6502` is pre-1.0 and under active development.
+
+The first official public release is currently targeted for October 2026, subject to API/ABI stabilization and completion of the current correctness baseline.
+
+The core project currently includes C, C++, ABI, and WebAssembly integration surfaces. Additional Python, C#, and Rust bindings are planned/in progress.
 
 ## License
 

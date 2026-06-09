@@ -34,7 +34,6 @@ public:
     explicit cpu(const cpu_snapshot& snapshot);
 
     void restart() noexcept;
-    void reset() noexcept;
     void jump_to(std::uint16_t address) noexcept;
 
     void irq(bool assert_irq) noexcept;

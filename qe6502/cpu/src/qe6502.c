@@ -108,6 +108,11 @@ static inline qe6502_tick_t fetch(qe6502_t* cpu)
     return tick;
 }
 
+static inline qe6502_tick_t fake_fetch(qe6502_t* cpu)
+{
+    return fetch(cpu);
+}
+
 static inline qe6502_tick_t stack_write(qe6502_t* cpu, uint8_t data)
 {
     uint16_t address = (uint16_t)(0x0100 | cpu->S);
@@ -671,7 +676,7 @@ static qe6502_tick_t mc_restart_read_hhff(qe6502_t* cpu, uint8_t bus)
 static qe6502_tick_t mc_restart_read_zzhh_fetch(qe6502_t* cpu, uint8_t bus)
 {
     cpu->PC = calculate_reset_pc(cpu->PC, bus);
-    return fetch(cpu);
+    return fake_fetch(cpu);
 }
 
 static qe6502_tick_t mc_restart_read_zzhh(qe6502_t* cpu, uint8_t bus)
