@@ -1,0 +1,3 @@
+[submodule "qe6502"]
+	path = qe6502
+	url = git@github.com:nnqe/qe6502.git
