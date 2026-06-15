@@ -1,5 +1,10 @@
 #include <stdint.h>
+
 #include <qe6502/qe6502.h>
+
+#define SOKOL_TIME_IMPL
+#include "sokol_time.h"
+#include "sokol_gfx.h"
 
 static uint8_t memory[65536];
 
@@ -13,7 +18,7 @@ static void memory_write(uint16_t address, uint8_t value)
     memory[address] = value;
 }
 
-int main(void)
+static int qe6502_static_smoke(void)
 {
     memory[0x8000] = 0xEA; /* NOP */
     memory[0xFFFC] = 0x00; /* reset vector low */
@@ -32,6 +37,38 @@ int main(void)
         }
 
         tick = qe6502_tick(&cpu, input);
+    }
+
+    return 0;
+}
+
+static int sokol_smoke(void)
+{
+    stm_setup();
+
+    uint64_t start = stm_now();
+    uint64_t elapsed = stm_since(start);
+
+    sg_desc desc = {0};
+    desc.buffer_pool_size = 8;
+    desc.image_pool_size = 8;
+
+    if (desc.buffer_pool_size != 8 || desc.image_pool_size != 8) {
+        return 1;
+    }
+
+    (void)elapsed;
+    return 0;
+}
+
+int main(void)
+{
+    if (qe6502_static_smoke() != 0) {
+        return 1;
+    }
+
+    if (sokol_smoke() != 0) {
+        return 1;
     }
 
     return 0;

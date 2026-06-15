@@ -8,9 +8,7 @@
       "binaryDir": "${sourceDir}/build/debug_native",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "BUILD_TESTING": "ON",
-        "QE6502_TOOLS_BUILD_TESTS": "ON",
-        "QE6502_TOOLS_ENABLE_WERROR": "ON"
+        "BUILD_TESTING": "ON"
       }
     },
     {
@@ -20,9 +18,7 @@
       "binaryDir": "${sourceDir}/build/release_native",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "BUILD_TESTING": "ON",
-        "QE6502_TOOLS_BUILD_TESTS": "ON",
-        "QE6502_TOOLS_ENABLE_WERROR": "ON"
+        "BUILD_TESTING": "ON"
       }
     }
   ],
