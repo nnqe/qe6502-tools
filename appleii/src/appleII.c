@@ -12,21 +12,22 @@
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
  */
 
-#include "appleII.h"
+#include <qe_appleII.h>
 
 ///////////////////////////////////////////////////////
 //                  KEYBOARD
 ///////////////////////////////////////////////////////
 
 QE_SIC
-void kbd_init(aii_appleII_t* pc, aii_bootstrap_t* bootstrap)
+void kbd_init(qeaii_t* pc, qeaii_bootstrap_t* bootstrap)
 {
+    (void)bootstrap;
     pc->kbd.key = 0;
     pc->kbd.key_register = 0;
 }
 
 QE_SIC
-uint8_t kbd_softswitch_read(aii_appleII_t* pc, uint8_t softswitch)
+uint8_t kbd_softswitch_read(qeaii_t* pc, uint8_t softswitch)
 {
     if (softswitch == 0x00 && (pc->kbd.key & 0x80))
     {
@@ -41,7 +42,7 @@ uint8_t kbd_softswitch_read(aii_appleII_t* pc, uint8_t softswitch)
 }
 
 QE_SIC
-void kbd_softswitch_write(aii_appleII_t* pc)
+void kbd_softswitch_write(qeaii_t* pc)
 {
     pc->kbd.key_register &= 0x7f;
 }
@@ -80,9 +81,9 @@ static const uint32_t s_video_offsets[192] =
 };
 
 QE_API_IMPL
-aii_frame_t* aii_frame(aii_appleII_t* pc)
+qeaii_frame_t* qeaii_frame(qeaii_t* pc)
 {
-    aii_frame_t* frame = &(pc->video.frames[ pc->video.current_frame ]);
+    qeaii_frame_t* frame = &(pc->video.frames[ pc->video.current_frame ]);
     pc->video.current_frame = !(pc->video.current_frame);
     frame->is_text = pc->video.is_text;
     frame->is_mixed = pc->video.is_mixed;
@@ -91,7 +92,7 @@ aii_frame_t* aii_frame(aii_appleII_t* pc)
 }
 
 QE_SIC
-void video_init(aii_appleII_t* pc, aii_bootstrap_t* bootstrap)
+void video_init(qeaii_t* pc, qeaii_bootstrap_t* bootstrap)
 {
     QE_CLEAR_OBJ(pc->video);
     pc->video.is_text = qe_true;
@@ -117,13 +118,13 @@ void video_init(aii_appleII_t* pc, aii_bootstrap_t* bootstrap)
 }
 
 QE_SIC
-uint32_t video_address(aii_appleII_t* pc)
+uint32_t video_address(qeaii_t* pc)
 {
     return (pc->video.is_page2 ? 0x40000800:0x20000400);
 }
 
 QE_SIC
-void video_softswitch_write(aii_appleII_t* pc, uint8_t softswitch)
+void video_softswitch_write(qeaii_t* pc, uint8_t softswitch)
 {
     switch(softswitch)
     {
@@ -140,29 +141,29 @@ void video_softswitch_write(aii_appleII_t* pc, uint8_t softswitch)
 }
 
 QE_SIC
-uint8_t video_softswitch_read(aii_appleII_t* pc, uint8_t softswitch)
+uint8_t video_softswitch_read(qeaii_t* pc, uint8_t softswitch)
 {
     switch (softswitch)
     {
-    case 0x1a: return (pc->video.is_text?1:0)  << 7;
-    case 0x1b: return (pc->video.is_mixed?1:0) << 7;
-    case 0x1c: return (pc->video.is_page2?1:0) << 7;
-    case 0x1d: return (pc->video.is_hires?1:0) << 7;
-    default: return (video_softswitch_write(pc, softswitch), 0);
+    case 0x1a: return QE_U8( (pc->video.is_text?1:0)  << 7 );
+    case 0x1b: return QE_U8( (pc->video.is_mixed?1:0) << 7 );
+    case 0x1c: return QE_U8( (pc->video.is_page2?1:0) << 7 );
+    case 0x1d: return QE_U8( (pc->video.is_hires?1:0) << 7 );
+    default: break;
     }
-    return 0;
+    return (video_softswitch_write(pc, softswitch), 0);
 }
 
 QE_SIC
-void video_clock(aii_appleII_t* pc)
+void video_clock(qeaii_t* pc)
 {
-    aii_videocard_t* video = &pc->video;
-    aii_bus_t* bus = &pc->bus;
-    if (video->line < aii_height)
+    qeaii_videocard_t* video = &pc->video;
+    qeaii_bus_t* bus = &pc->bus;
+    if (video->line < qeaii_height)
     {
-        if (video->col < aii_clocks_per_line_visible_pixels)
+        if (video->col < qeaii_clocks_per_line_visible_pixels)
         {
-            aii_frame_t* frame = &video->frames[ video->current_frame ];
+            qeaii_frame_t* frame = &video->frames[ video->current_frame ];
             if (video->is_text ||
                 (video->is_mixed && video->line >= 160))
             {
@@ -170,7 +171,9 @@ void video_clock(aii_appleII_t* pc)
                 uint8_t symbol = bus->memory.data[ video->offsets.lsw.u16 ];
                 uint8_t symbol_line = video->line % 8;
                 uint8_t bitmap_idx = symbol % 64;
-                if (((symbol & 0b11000000) == 0b01000000) && video->blink)
+
+                    // 0b11000000     0b01000000
+                if (((symbol & 0xC0) == 0x40) && video->blink)
                 {
                     symbol ^= 0x80;
                 }
@@ -195,7 +198,7 @@ void video_clock(aii_appleII_t* pc)
             {
                 // draw lores
                 uint8_t code = bus->memory.data[ video->offsets.lsw.u16 ];
-                if (video->line & 0b00001100)
+                if (video->line & 0xC) //0b00001100
                 {
                     code >>= 4;
                 }
@@ -212,7 +215,7 @@ void video_clock(aii_appleII_t* pc)
         else
         {
             video->col++;
-            if (video->col == aii_total_clocks_per_line)
+            if (video->col == qeaii_total_clocks_per_line)
             {
                 video->col = 0;
                 video->line++;
@@ -223,9 +226,9 @@ void video_clock(aii_appleII_t* pc)
     else
     {
         video->col++;
-        if (video->col == aii_dummy_lines * aii_total_clocks_per_line)
+        if (video->col == qeaii_dummy_lines * qeaii_total_clocks_per_line)
         {
-            pc->stop_flags |= aii_flag_new_frame;
+            pc->stop_flags |= qeaii_flag_new_frame;
             video->frame_pos = 0;
             video->col = 0;
             video->line = 0;
@@ -239,36 +242,37 @@ void video_clock(aii_appleII_t* pc)
 ///////////////////////////////////////////////////////
 
 QE_API_IMPL
-aii_speaker_frame_t*
-aii_speaker_frame(aii_appleII_t* pc)
+qeaii_speaker_frame_t*
+qeaii_speaker_frame(qeaii_t* pc)
 {
     uint8_t old_frame = pc->speaker.current_frame;
     uint8_t new_frame = !old_frame;
 
     pc->speaker.current_frame = new_frame;
-    pc->speaker.frames[new_frame].frame_start_cycle = pc->cycle_counter;
+    pc->speaker.frames[new_frame].start_cycle = pc->cycle_counter + 1;
     pc->speaker.frames[new_frame].tick_count = 0;
-    pc->speaker.frames[new_frame].first_value = !pc->speaker.last_value;
+    pc->speaker.frames[new_frame].speaker_state = pc->speaker.last_value;
 
+    pc->speaker.frames[old_frame].end_cycle = pc->cycle_counter;
     return &pc->speaker.frames[old_frame];
 }
 
 QE_SIC
-void speaker_init(aii_appleII_t* pc, aii_bootstrap_t* bootstrap)
+void speaker_init(qeaii_t* pc, qeaii_bootstrap_t* bootstrap)
 {
+    (void)bootstrap;
     QE_CLEAR_OBJ(pc->speaker);
 }
 
 QE_SIC
-void speaker_io(aii_appleII_t* pc)
+void speaker_io(qeaii_t* pc)
 {
-    pc->speaker.last_value = !pc->speaker.last_value;
-    aii_speaker_frame_t* frame = &pc->speaker.frames[pc->speaker.current_frame];
-    frame->ticks[frame->tick_count] = pc->cycle_counter - frame->frame_start_cycle;
-    frame->tick_count++;
-    if (frame->tick_count >= QE_ARRAY_SIZE(frame->ticks))
+    qeaii_speaker_frame_t* frame = &pc->speaker.frames[pc->speaker.current_frame];
+    if (frame->tick_count < QE_ARRAY_SIZE(frame->ticks))
     {
-        frame->tick_count = 0;
+        pc->speaker.last_value = !pc->speaker.last_value;
+        frame->ticks[frame->tick_count] = QE_U32(pc->cycle_counter - frame->start_cycle);
+        frame->tick_count++;
     }
 }
 
@@ -277,7 +281,7 @@ void speaker_io(aii_appleII_t* pc)
 ///////////////////////////////////////////////////////
 
 QE_API_IMPL
-void aii_mount_disk0(aii_appleII_t* pc, aii_diskette_t* diskette)
+void qeaii_mount_disk0(qeaii_t* pc, qeaii_diskette_t* diskette)
 {
     pc->driveII.drives[0].is_mount = qe_true;
     pc->driveII.drives[0].diskette.changed = qe_false;
@@ -285,13 +289,13 @@ void aii_mount_disk0(aii_appleII_t* pc, aii_diskette_t* diskette)
 }
 
 QE_API_IMPL
-void aii_unmount_disk0(aii_appleII_t* pc)
+void qeaii_unmount_disk0(qeaii_t* pc)
 {
     pc->driveII.drives[0].is_mount = qe_false;
 }
 
 QE_SIC
-void driveII_init(aii_appleII_t* pc, aii_bootstrap_t* bootstrap)
+void driveII_init(qeaii_t* pc, qeaii_bootstrap_t* bootstrap)
 {
     QE_CLEAR_OBJ(pc->driveII);
     if (bootstrap->mount_disk0)
@@ -302,21 +306,21 @@ void driveII_init(aii_appleII_t* pc, aii_bootstrap_t* bootstrap)
 }
 
 QE_SIC
-void driveII_phase_on(aii_drive_state_t* drive, uint8_t phase)
+void driveII_phase_on(qeaii_drive_state_t* drive, uint8_t phase)
 {
     drive->phases[phase] = qe_true;
-    uint8_t direction = (phase - drive->phase + 4) % 4;
+    uint8_t direction = QE_U8( (phase - drive->phase + 4) % 4 );
     if (direction == 1)
     {
-        drive->phase = (drive->phase + 1) % 4;
-        if ((drive->phase & 1) == 0 && drive->track < aii_disk_tracks - 1)
+        drive->phase = QE_U8( (drive->phase + 1) % 4 );
+        if ((drive->phase & 1) == 0 && drive->track < qeaii_disk_tracks - 1)
         {
             drive->track++;
         }
     }
     else if (direction == 3)
     {
-        drive->phase = (drive->phase + 3) % 4;
+        drive->phase = QE_U8( (drive->phase + 3) % 4 );
         if ((drive->phase & 1) && drive->track > 0)
         {
             drive->track--;
@@ -325,7 +329,7 @@ void driveII_phase_on(aii_drive_state_t* drive, uint8_t phase)
 }
 
 QE_SIC
-uint8_t driveII_latch_event(aii_drive_state_t* drive, uint8_t data, qe_bool sw_reading)
+uint8_t driveII_latch_event(qeaii_drive_state_t* drive, uint8_t data, qe_bool sw_reading)
 {
     if (drive->q7)
     {
@@ -335,8 +339,8 @@ uint8_t driveII_latch_event(aii_drive_state_t* drive, uint8_t data, qe_bool sw_r
         }
         if (!sw_reading && !drive->diskette.readonly) // switch not reading (switch writing)
         {
-            drive->diskette.data[ drive->track * aii_disk_track_size + drive->track_pos] = data;
-            drive->track_pos = (drive->track_pos + 1) % aii_disk_track_size;
+            drive->diskette.data[ drive->track * qeaii_disk_track_size + drive->track_pos] = data;
+            drive->track_pos = QE_U16( (drive->track_pos + 1) % qeaii_disk_track_size );
             drive->diskette.changed = qe_true;
         }
         return 0x0;
@@ -354,16 +358,16 @@ uint8_t driveII_latch_event(aii_drive_state_t* drive, uint8_t data, qe_bool sw_r
         {
             return 0x0;
         }
-        uint8_t latch = drive->diskette.data[ drive->track * aii_disk_track_size + drive->track_pos];
-        drive->track_pos = (drive->track_pos + 1) % aii_disk_track_size;
+        uint8_t latch = drive->diskette.data[ drive->track * qeaii_disk_track_size + drive->track_pos];
+        drive->track_pos = QE_U16( (drive->track_pos + 1) % qeaii_disk_track_size );
         return latch;
     }
 }
 
 QE_SIC
-uint8_t driveII_process_softswitch(aii_appleII_t* pc, uint8_t softswitch, uint8_t data, qe_bool sw_reading)
+uint8_t driveII_process_softswitch(qeaii_t* pc, uint8_t softswitch, uint8_t data, qe_bool sw_reading)
 {
-    aii_drive_state_t* drive = &pc->driveII.drives[ pc->driveII.active_drive ];
+    qeaii_drive_state_t* drive = &pc->driveII.drives[ pc->driveII.active_drive ];
     if (!drive->is_mount)
     {
         return 0x0;
@@ -405,13 +409,13 @@ uint8_t driveII_process_softswitch(aii_appleII_t* pc, uint8_t softswitch, uint8_
 }
 
 QE_SIC
-uint8_t driveII_read(aii_appleII_t* pc, uint8_t softswitch)
+uint8_t driveII_read(qeaii_t* pc, uint8_t softswitch)
 {
     return driveII_process_softswitch(pc, softswitch, 0, qe_true);
 }
 
 QE_SIC
-void driveII_write(aii_appleII_t* pc, uint8_t softswitch, uint8_t data)
+void driveII_write(qeaii_t* pc, uint8_t softswitch, uint8_t data)
 {
     driveII_process_softswitch(pc, softswitch, data, qe_false);
 }
@@ -421,14 +425,14 @@ void driveII_write(aii_appleII_t* pc, uint8_t softswitch, uint8_t data)
 ///////////////////////////////////////////////////////
 
 QE_SIC
-void bus_init(aii_appleII_t* pc, aii_bootstrap_t* bootstrap)
+void bus_init(qeaii_t* pc, qeaii_bootstrap_t* bootstrap)
 {
     QE_COPY_OBJ(pc->bus.memory, bootstrap->mem);
     pc->bus.firts_rom_address = bootstrap->first_rom_address;
 }
 
 QE_SIC
-void bus_write(aii_appleII_t* pc, qe_word_t address, uint8_t data)
+void bus_write(qeaii_t* pc, qe_word_t address, uint8_t data)
 {
     if (QE_LIKELY( address.u8_msb != 0xc0 ))
     {
@@ -461,7 +465,7 @@ void bus_write(aii_appleII_t* pc, qe_word_t address, uint8_t data)
 }
 
 QE_SIC
-uint8_t bus_read(aii_appleII_t* pc, qe_word_t address)
+uint8_t bus_read(qeaii_t* pc, qe_word_t address)
 {
     if (QE_LIKELY( address.u8_msb != 0xc0 ))
     {
@@ -492,7 +496,7 @@ uint8_t bus_read(aii_appleII_t* pc, qe_word_t address)
 }
 
 QE_SIC
-void bus_clock(aii_appleII_t *pc)
+void bus_clock(qeaii_t *pc)
 {
     qe_word_t address;
     address.u16 = qe6502_address(&pc->cpu);
@@ -515,7 +519,7 @@ void bus_clock(aii_appleII_t *pc)
 ///////////////////////////////////////////////////////
 
 QE_SIC
-void cpu_init(aii_appleII_t *pc)
+void cpu_init(qeaii_t *pc)
 {
     pc->nmi = qe_false;
     pc->cycle = qe6502_power_on(&pc->cpu, qe6502_mos);
@@ -523,18 +527,19 @@ void cpu_init(aii_appleII_t *pc)
 }
 
 QE_SIC
-void cpu_clock(aii_appleII_t *pc)
+void cpu_clock(qeaii_t *pc)
 {
     pc->cycle = pc->cycle.execute(&pc->cpu);
     pc->cycle_counter++;
+    pc->cycle_counter += pc->cpu.merged;
     if (!qe6502_ok(&pc->cpu))
     {
-        pc->stop_flags |= aii_flag_cpu_error;
+        pc->stop_flags |= qeaii_flag_cpu_error;
     }
 }
 
 QE_SIC
-void cpu_handle_nmi(aii_appleII_t *pc)
+void cpu_handle_nmi(qeaii_t *pc)
 {
     if (pc->nmi)
     {
@@ -549,7 +554,7 @@ void cpu_handle_nmi(aii_appleII_t *pc)
 ///////////////////////////////////////////////////////
 
 QE_API_IMPL
-qe_bool aii_power_on(aii_appleII_t *pc, aii_bootstrap_t* bootstrap)
+qe_bool qeaii_power_on(qeaii_t *pc, qeaii_bootstrap_t* bootstrap)
 {
     pc->ex_video_handler = bootstrap->ex_video_handler;
     pc->ex_bus_handler = bootstrap->ex_bus_handler;
@@ -561,77 +566,50 @@ qe_bool aii_power_on(aii_appleII_t *pc, aii_bootstrap_t* bootstrap)
     speaker_init(pc, bootstrap);
     driveII_init(pc, bootstrap);
     cpu_init(pc);
-    return aii_pc_ok(pc);
+    return qeaii_pc_ok(pc);
 }
 
 QE_API_IMPL
-qe_bool aii_pc_ok(aii_appleII_t* pc)
+qe_bool qeaii_pc_ok(qeaii_t* pc)
 {
     return qe6502_ok(&pc->cpu);
 }
 
 QE_API_IMPL
-uint32_t aii_run(aii_appleII_t* pc, uint16_t max_instructions)
+uint32_t qeaii_run(qeaii_t *pc, uint32_t requested_cycles)
 {
     if (!pc->is_ok)
     {
         return 0;
     }
-    int32_t instructions_left = max_instructions;
-    uint64_t initial_cycle = pc->cycle_counter;
+    uint64_t target_cycles = pc->cycle_counter + requested_cycles;
     pc->stop_flags = 0;
     cpu_handle_nmi(pc);
-    pc->video.blink = initial_cycle & ( 1 << 19 ) ? 1 : 0;
+    pc->video.blink = pc->cycle_counter & ( 1 << 19 ) ? 1 : 0;
 
-    while(qe_true)
+    while((pc->cycle_counter < target_cycles) && (!pc->stop_flags))
     {
-        if (qe6502_instr_done(&pc->cpu))
-        {
-            instructions_left--;
-            if ((instructions_left <= 0) || (pc->stop_flags))
-            {
-                // If we're not currently executing an instruction
-                // and either there are no instructions left or a stop flag is set
-                break;
-            }
-        }
-
         video_clock(pc);
         bus_clock(pc);
         cpu_clock(pc);
-        #if(QE6502_ENABLE_CYCLE_MERGE == 1)
-            pc->cycle_counter += pc->cpu.merged;
-            pc->cpu.merged = 0;
-        #endif
     }
-    return pc->cycle_counter - initial_cycle;
+    return QE_U32(pc->cycle_counter - requested_cycles);
 }
 
 QE_API_IMPL
-uint32_t aii_run_ex(aii_appleII_t* pc, uint16_t max_instructions)
+uint32_t qeaii_run_ex(qeaii_t* pc, uint32_t requested_cycles)
 {
     if (!pc->is_ok)
     {
         return 0;
     }
-    int32_t instructions_left = max_instructions;
-    uint64_t initial_cycle = pc->cycle_counter;
+    uint64_t target_cycles = pc->cycle_counter + requested_cycles;
     pc->stop_flags = 0;
     cpu_handle_nmi(pc);
-    pc->video.blink = initial_cycle & ( 1 << 19 ) ? 1 : 0;
+    pc->video.blink = pc->cycle_counter & ( 1 << 19 ) ? 1 : 0;
 
-    while(qe_true)
+    while((pc->cycle_counter < target_cycles) && (!pc->stop_flags))
     {
-        if (qe6502_instr_done(&pc->cpu))
-        {
-            instructions_left--;
-            if ((instructions_left <= 0) || (pc->stop_flags))
-            {
-                // If we're not currently executing an instruction
-                // and either there are no instructions left or a stop flag is set
-                break;
-            }
-        }
         if (QE_NULL == pc->ex_video_handler ||
             qe_false == pc->ex_video_handler(pc))
         {
@@ -646,95 +624,31 @@ uint32_t aii_run_ex(aii_appleII_t* pc, uint16_t max_instructions)
             qe_false == pc->ex_cpu_handler(pc))
         {
             cpu_clock(pc);
-            #if(QE6502_ENABLE_CYCLE_MERGE == 1)
-                pc->cycle_counter += pc->cpu.merged;
-                pc->cpu.merged = 0;
-            #endif
         }
     }
-    return pc->cycle_counter - initial_cycle;
+    return QE_U32(pc->cycle_counter - requested_cycles);
 }
 
-#if(QE6502_ENABLE_CYCLE_MERGE != 1)
-
-    QE_API_IMPL
-    uint32_t aii_run_cycles(aii_appleII_t *pc, uint32_t max_cycles)
-    {
-        if (!pc->is_ok)
-        {
-            return 0;
-        }
-        uint32_t cycles_left = max_cycles;
-        pc->stop_flags = 0;
-        cpu_handle_nmi(pc);
-        pc->video.blink = pc->cycle_counter & ( 1 << 19 ) ? 1 : 0;
-
-        while(cycles_left && (!pc->stop_flags))
-        {
-            video_clock(pc);
-            bus_clock(pc);
-            cpu_clock(pc);
-            cycles_left--;
-        }
-        return cycles_left;
-    }
-
-    QE_API_IMPL
-    uint32_t aii_run_cycles_ex(aii_appleII_t* pc, uint32_t max_cycles)
-    {
-        if (!pc->is_ok)
-        {
-            return 0;
-        }
-        uint32_t cycles_left = max_cycles;
-        pc->stop_flags = 0;
-        cpu_handle_nmi(pc);
-        pc->video.blink = pc->cycle_counter & ( 1 << 19 ) ? 1 : 0;
-
-        while(cycles_left && (!pc->stop_flags))
-        {
-            if (QE_NULL == pc->ex_video_handler ||
-                qe_false == pc->ex_video_handler(pc))
-            {
-                video_clock(pc);
-            }
-            if (QE_NULL == pc->ex_bus_handler ||
-                qe_false == pc->ex_bus_handler(pc))
-            {
-                bus_clock(pc);
-            }
-            if (QE_NULL == pc->ex_cpu_handler ||
-                qe_false == pc->ex_cpu_handler(pc))
-            {
-                cpu_clock(pc);
-            }
-            cycles_left--;
-        }
-        return cycles_left;
-    }
-
-#endif // QE6502_ENABLE_CYCLE_MERGE != 1
-
 QE_API_IMPL
-void aii_press_key(aii_appleII_t *pc, uint8_t key)
+void qeaii_press_key(qeaii_t *pc, uint8_t key)
 {
     pc->kbd.key = key;
 }
 
 QE_API_IMPL
-qe_bool aii_disk_active(aii_appleII_t *pc)
+qe_bool qeaii_disk_active(qeaii_t *pc)
 {
     return pc->driveII.spinning;
 }
 
 QE_API_IMPL
-qe_bool aii_frame_ready(aii_appleII_t *pc)
+qe_bool qeaii_frame_ready(qeaii_t *pc)
 {
-    return (pc->stop_flags & aii_flag_new_frame) != 0;
+    return (pc->stop_flags & qeaii_flag_new_frame) != 0;
 }
 
 QE_API_IMPL
-void aii_break(aii_appleII_t *pc)
+void qeaii_break(qeaii_t *pc)
 {
     pc->nmi = qe_true;
 }

@@ -8,7 +8,7 @@ endif()
 
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fno-inline -fno-omit-frame-pointer")
 
-target_link_libraries(appleII PRIVATE qe6502)
+target_link_libraries(appleII PRIVATE qe6502::static)
 
 target_include_directories(appleII PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

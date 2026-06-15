@@ -24,3 +24,4 @@ target_include_directories(qe6502_tools_sokol INTERFACE
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
+add_subdirectory(appleii)
