@@ -8,8 +8,9 @@
       "binaryDir": "${sourceDir}/build/debug_native",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "QE6502_BUILD_TESTS": "ON",
-        "QE6502_ENABLE_WERROR": "ON"
+        "BUILD_TESTING": "ON",
+        "QE6502_TOOLS_BUILD_TESTS": "ON",
+        "QE6502_TOOLS_ENABLE_WERROR": "ON"
       }
     },
     {
@@ -19,34 +20,9 @@
       "binaryDir": "${sourceDir}/build/release_native",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "QE6502_BUILD_TESTS": "ON",
-        "QE6502_ENABLE_WERROR": "ON"
-      }
-    },
-    {
-      "name": "debug_wasm",
-      "displayName": "Debug WebAssembly",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/debug_wasm",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/wasm32-unknown-unknown-clang.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "QE6502_BUILD_WASM": "ON",
-        "QE6502_BUILD_TESTS": "ON",
-        "QE6502_ENABLE_WERROR": "ON"
-      }
-    },
-    {
-      "name": "release_wasm",
-      "displayName": "Release WebAssembly",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/release_wasm",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/wasm32-unknown-unknown-clang.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "QE6502_BUILD_WASM": "ON",
-        "QE6502_BUILD_TESTS": "ON",
-        "QE6502_ENABLE_WERROR": "ON"
+        "BUILD_TESTING": "ON",
+        "QE6502_TOOLS_BUILD_TESTS": "ON",
+        "QE6502_TOOLS_ENABLE_WERROR": "ON"
       }
     }
   ],
@@ -58,14 +34,22 @@
     {
       "name": "release_native",
       "configurePreset": "release_native"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug_native",
+      "configurePreset": "debug_native",
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
-      "name": "debug_wasm",
-      "configurePreset": "debug_wasm"
-    },
-    {
-      "name": "release_wasm",
-      "configurePreset": "release_wasm"
+      "name": "release_native",
+      "configurePreset": "release_native",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }
