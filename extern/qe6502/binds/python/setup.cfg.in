@@ -1,0 +1,2 @@
+[bdist_wheel]
+py_limited_api = @QE6502_PYTHON_WHEEL_PYTHON_TAG@

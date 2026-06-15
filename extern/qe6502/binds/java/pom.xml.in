@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.nnqe</groupId>
+  <artifactId>qe6502</artifactId>
+  <version>@QE6502_PACKAGE_VERSION@</version>
+  <packaging>jar</packaging>
+
+  <name>qe6502 Java Binding</name>
+  <description>Java bindings for the qe6502 CPU emulator.</description>
+  <url>https://github.com/nnqe/qe6502</url>
+
+  <licenses>
+    <license>
+      <name>MIT</name>
+      <url>https://opensource.org/licenses/MIT</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>Nikolay Nedelchev</name>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/nnqe/qe6502.git</connection>
+    <developerConnection>scm:git:https://github.com/nnqe/qe6502.git</developerConnection>
+    <url>https://github.com/nnqe/qe6502</url>
+  </scm>
+</project>

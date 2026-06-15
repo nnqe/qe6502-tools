@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <PackageId>Qe6502</PackageId>
+    <Title>Qe6502</Title>
+    <Version Condition="'$(Version)' == ''">0.0.0</Version>
+    <Authors>Nikolay Nedelchev</Authors>
+    <Company>Nikolay Nedelchev</Company>
+    <Description>.NET binding for qe6502, a cycle-oriented 6502 CPU emulator with bundled native runtime libraries.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/nnqe/qe6502</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/nnqe/qe6502</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>6502;65c02;emulator;cpu;mos6502;retrocomputing</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <Copyright>Copyright (c) 2026 Nikolay Nedelchev</Copyright>
+    <NeutralLanguage>en</NeutralLanguage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(Qe6502GeneratedVersionSource)' != ''">
+    <Compile Include="$(Qe6502GeneratedVersionSource)" Link="Qe6502Version.g.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(Qe6502NativeRuntimeRid)' != '' and '$(Qe6502NativeRuntimeLibrary)' != ''">
+    <None Include="$(Qe6502NativeRuntimeLibrary)" Pack="true" PackagePath="runtimes/$(Qe6502NativeRuntimeRid)/native/" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(Qe6502NativeRuntimeRoot)' != ''">
+    <None Include="$(Qe6502NativeRuntimeRoot)/**/*" Pack="true" PackagePath="runtimes/%(RecursiveDir)%(Filename)%(Extension)" Visible="false" />
+  </ItemGroup>
+</Project>

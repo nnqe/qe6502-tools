@@ -1,0 +1,10 @@
+namespace Qe6502
+{
+    internal static class NativeVersion
+    {
+        internal const uint CompiledAbiVersionMajor = @QE6502_VERSION_MAJOR@u;
+        internal const uint CompiledAbiVersionMinor = @QE6502_VERSION_MINOR@u;
+        internal const uint CompiledAbiVersion =
+            (CompiledAbiVersionMajor << 16) | CompiledAbiVersionMinor;
+    }
+}

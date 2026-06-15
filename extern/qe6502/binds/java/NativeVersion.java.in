@@ -1,0 +1,11 @@
+package qe6502;
+
+final class NativeVersion {
+    static final int COMPILED_ABI_VERSION_MAJOR = @QE6502_VERSION_MAJOR@;
+    static final int COMPILED_ABI_VERSION_MINOR = @QE6502_VERSION_MINOR@;
+    static final int COMPILED_ABI_VERSION =
+        (COMPILED_ABI_VERSION_MAJOR << 16) | COMPILED_ABI_VERSION_MINOR;
+
+    private NativeVersion() {
+    }
+}

@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>qe6502 JS manual tests</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111827;
+      color: #e5e7eb;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px;
+      box-sizing: border-box;
+    }
+
+    main {
+      width: min(1100px, 100%);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+
+    p {
+      margin: 0 0 20px;
+      color: #cbd5e1;
+    }
+
+    .panel {
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 24px 60px rgb(0 0 0 / 0.24);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    button, select, input {
+      border: 1px solid #4b5563;
+      border-radius: 10px;
+      background: #111827;
+      color: #f9fafb;
+      padding: 10px 12px;
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+      background: #2563eb;
+      border-color: #3b82f6;
+      font-weight: 700;
+    }
+
+    button.secondary {
+      background: #374151;
+      border-color: #4b5563;
+    }
+
+    button:disabled, select:disabled, input:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    label {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      color: #d1d5db;
+    }
+
+    #status {
+      min-height: 24px;
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+
+    #status.pass {
+      color: #86efac;
+    }
+
+    #status.fail {
+      color: #fca5a5;
+    }
+
+    pre {
+      margin: 0;
+      min-height: 420px;
+      max-height: 70vh;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #020617;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 16px;
+      font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    }
+
+    .hint {
+      margin-top: 14px;
+      color: #94a3b8;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>qe6502 JS manual tests</h1>
+    <p>Run the browser/WASM smoke test, Klaus2m5 suite, or fetch SingleStepTests directly from GitHub and inspect the output directly in the page.</p>
+
+    <section class="panel">
+      <div class="controls">
+        <label>
+          Test
+          <select id="test-select">
+            <option value="smoke">Smoke</option>
+            <option value="klaus">Klaus2m5 suite</option>
+            <option value="singlestep">SingleStepTests</option>
+          </select>
+        </label>
+        <button id="run-button" type="button">Run selected test</button>
+        <button id="clear-button" type="button" class="secondary">Clear output</button>
+      </div>
+
+      <div id="singlestep-controls" class="controls" hidden>
+        <label>
+          Model
+          <select id="singlestep-model">
+            <option value="nmos">NMOS 6502</option>
+            <option value="nes">NES 6502</option>
+            <option value="wdc">WDC 65C02</option>
+            <option value="rw">Rockwell 65C02</option>
+            <option value="st">Synertek 65C02</option>
+          </select>
+        </label>
+        <label>
+          Scope
+          <select id="singlestep-scope">
+            <option value="opcode">One opcode</option>
+            <option value="all">Full opcode package</option>
+          </select>
+        </label>
+        <label>
+          Source
+          <select id="singlestep-source">
+            <option value="github">GitHub raw</option>
+            <option value="local-file">Local opcode file</option>
+            <option value="local-folder">Local opcode folder</option>
+          </select>
+        </label>
+        <label>
+          GitHub base
+          <input id="singlestep-base-url" type="text" size="70">
+        </label>
+        <label>
+          Local file
+          <input id="singlestep-local-file" type="file" accept=".json,application/json" hidden>
+        </label>
+        <label>
+          Local folder
+          <input id="singlestep-local-folder" type="file" webkitdirectory multiple hidden>
+        </label>
+        <label>
+          Opcode
+          <input id="singlestep-opcode" type="text" inputmode="text" maxlength="2" value="EA" size="2">
+        </label>
+        <label>
+          <input id="singlestep-cycles" type="checkbox" checked>
+          Compare bus cycles
+        </label>
+        <label>
+          Max cases/opcode
+          <input id="singlestep-max-cases" type="number" min="0" step="1" value="0" size="8">
+        </label>
+      </div>
+
+      <div id="status">Ready.</div>
+      <pre id="output" aria-live="polite"></pre>
+      <div class="hint">
+        Serve this directory over HTTP after a WASM build, for example:
+        <code>python3 -m http.server -d build/release_wasm/harness/js_manual 8000</code>.
+        SingleStepTests can be downloaded on demand from
+        <code>https://raw.githubusercontent.com/SingleStepTests/65x02/main/</code>,
+        or loaded from a local <code>00.json</code>..<code>ff.json</code> file/folder when the browser cannot reach GitHub.
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    const manualCacheBuster = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    import(`./js_manual.js?v=${encodeURIComponent(manualCacheBuster)}`);
+  </script>
+</body>
+</html>

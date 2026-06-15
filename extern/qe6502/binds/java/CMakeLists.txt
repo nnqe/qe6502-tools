@@ -1,0 +1,381 @@
+include(Qe6502FindJava25)
+
+if(NOT QE6502_BUILD_JAVA)
+    message(STATUS "QE6502_BUILD_JAVA is OFF; skipping qe6502 Java binding")
+    return()
+endif()
+
+qe6502_find_java25()
+
+if(NOT Java_FOUND)
+    message(STATUS "Java 25+ development tools not found; skipping qe6502 Java binding")
+    return()
+endif()
+
+if(NOT TARGET qe6502_shared)
+    message(STATUS "qe6502_shared target is not available; skipping qe6502 Java binding")
+    return()
+endif()
+
+set(QE6502_JAVA_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
+set(QE6502_JAVA_GENERATED_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated-src)
+set(QE6502_JAVA_GENERATED_VERSION_SOURCE ${QE6502_JAVA_GENERATED_SOURCE_DIR}/qe6502/NativeVersion.java)
+set(QE6502_JAVA_CLASSES_DIR ${CMAKE_CURRENT_BINARY_DIR}/classes)
+set(QE6502_JAVA_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/dist)
+set(QE6502_JAVA_JAR ${QE6502_JAVA_OUTPUT_DIR}/qe6502-java.jar)
+set(QE6502_JAVA_SOURCES_JAR ${QE6502_JAVA_OUTPUT_DIR}/qe6502-java-sources.jar)
+set(QE6502_JAVA_JAVADOC_DIR ${CMAKE_CURRENT_BINARY_DIR}/javadoc)
+set(QE6502_JAVA_JAVADOC_JAR ${QE6502_JAVA_OUTPUT_DIR}/qe6502-java-javadoc.jar)
+set(QE6502_JAVA_CONFIGURED_POM ${CMAKE_CURRENT_BINARY_DIR}/pom.xml)
+
+file(MAKE_DIRECTORY "${QE6502_JAVA_GENERATED_SOURCE_DIR}/qe6502")
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/pom.xml.in
+    ${QE6502_JAVA_CONFIGURED_POM}
+    @ONLY
+)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/NativeVersion.java.in"
+    "${QE6502_JAVA_GENERATED_VERSION_SOURCE}"
+    @ONLY
+)
+
+find_program(QE6502_MAVEN_EXECUTABLE NAMES mvn.cmd mvn)
+if(QE6502_MAVEN_EXECUTABLE)
+    message(STATUS "  QE6502_MAVEN_EXECUTABLE = ${QE6502_MAVEN_EXECUTABLE}")
+else()
+    message(STATUS "Maven executable not found; skipping qe6502 Java Maven package smoke target")
+endif()
+
+get_filename_component(QE6502_JAVA_BIN_DIR "${Java_JAVAC_EXECUTABLE}" DIRECTORY)
+find_program(QE6502_JAVADOC_EXECUTABLE
+    NAMES javadoc javadoc.exe
+    HINTS "${QE6502_JAVA_BIN_DIR}"
+    NO_DEFAULT_PATH
+)
+find_program(QE6502_JAVADOC_EXECUTABLE NAMES javadoc javadoc.exe)
+if(QE6502_JAVADOC_EXECUTABLE)
+    message(STATUS "  QE6502_JAVADOC_EXECUTABLE = ${QE6502_JAVADOC_EXECUTABLE}")
+else()
+    message(STATUS "Java 25+ javadoc tool not found; skipping qe6502 Java binding")
+    return()
+endif()
+
+find_program(QE6502_GPG_EXECUTABLE NAMES gpg gpg2)
+if(QE6502_GPG_EXECUTABLE)
+    message(STATUS "  QE6502_GPG_EXECUTABLE = ${QE6502_GPG_EXECUTABLE}")
+else()
+    message(STATUS "GPG executable not found; skipping qe6502 Java Maven artifact signing target")
+endif()
+
+set(QE6502_JAVA_MAVEN_GROUP_ID "io.github.nnqe")
+set(QE6502_JAVA_MAVEN_ARTIFACT_ID "qe6502")
+set(QE6502_JAVA_MAVEN_VERSION "${QE6502_PACKAGE_VERSION}")
+
+file(GLOB_RECURSE QE6502_JAVA_SOURCES CONFIGURE_DEPENDS
+    ${QE6502_JAVA_SOURCE_DIR}/*.java
+)
+list(APPEND QE6502_JAVA_SOURCES ${QE6502_JAVA_GENERATED_VERSION_SOURCE})
+
+if(WIN32)
+    set(QE6502_JAVA_NATIVE_LIBRARY_NAME "$<TARGET_FILE_NAME:qe6502_shared>")
+else()
+    set(QE6502_JAVA_NATIVE_LIBRARY_NAME "$<TARGET_LINKER_FILE_NAME:qe6502_shared>")
+endif()
+
+if(WIN32)
+    set(QE6502_JAVA_PLATFORM_OS "win")
+elseif(APPLE)
+    set(QE6502_JAVA_PLATFORM_OS "osx")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(QE6502_JAVA_PLATFORM_OS "linux")
+else()
+    set(QE6502_JAVA_PLATFORM_OS "unknown")
+endif()
+
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" QE6502_JAVA_PROCESSOR)
+if(QE6502_JAVA_PROCESSOR STREQUAL "x86_64" OR QE6502_JAVA_PROCESSOR STREQUAL "amd64")
+    set(QE6502_JAVA_PLATFORM_ARCH "x64")
+elseif(QE6502_JAVA_PROCESSOR STREQUAL "aarch64" OR QE6502_JAVA_PROCESSOR STREQUAL "arm64")
+    set(QE6502_JAVA_PLATFORM_ARCH "arm64")
+else()
+    set(QE6502_JAVA_PLATFORM_ARCH "unknown")
+endif()
+
+set(QE6502_JAVA_PLATFORM_ID "${QE6502_JAVA_PLATFORM_OS}-${QE6502_JAVA_PLATFORM_ARCH}")
+set(QE6502_JAVA_PLATFORM_SUPPORTED TRUE)
+if(QE6502_JAVA_PLATFORM_OS STREQUAL "unknown" OR QE6502_JAVA_PLATFORM_ARCH STREQUAL "unknown")
+    set(QE6502_JAVA_PLATFORM_SUPPORTED FALSE)
+endif()
+
+if(QE6502_JAVA_PLATFORM_SUPPORTED)
+    message(STATUS "  QE6502_JAVA_PLATFORM_ID = ${QE6502_JAVA_PLATFORM_ID}")
+else()
+    message(STATUS "  QE6502_JAVA_PLATFORM_ID = unsupported (${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}); Java package runtime asset target disabled")
+endif()
+
+set(QE6502_JAVA_NATIVE_RESOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/native-resource/qe6502/native/${QE6502_JAVA_PLATFORM_ID})
+
+add_custom_command(
+    OUTPUT ${QE6502_JAVA_JAR}
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${QE6502_JAVA_CLASSES_DIR}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${QE6502_JAVA_CLASSES_DIR}
+    COMMAND ${Java_JAVAC_EXECUTABLE}
+        --release 25
+        -d ${QE6502_JAVA_CLASSES_DIR}
+        ${QE6502_JAVA_SOURCES}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${QE6502_JAVA_OUTPUT_DIR}
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_CURRENT_BINARY_DIR}/native-resource
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${QE6502_JAVA_NATIVE_RESOURCE_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:qe6502_shared>
+        ${QE6502_JAVA_NATIVE_RESOURCE_DIR}/${QE6502_JAVA_NATIVE_LIBRARY_NAME}
+    COMMAND ${Java_JAR_EXECUTABLE}
+        --create
+        --file ${QE6502_JAVA_JAR}
+        -C ${QE6502_JAVA_CLASSES_DIR} .
+        -C ${CMAKE_CURRENT_BINARY_DIR}/native-resource .
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:qe6502_shared>
+        ${QE6502_JAVA_OUTPUT_DIR}/${QE6502_JAVA_NATIVE_LIBRARY_NAME}
+    DEPENDS
+        qe6502_shared
+        ${QE6502_JAVA_SOURCES}
+    COMMENT "Building qe6502 Java binding"
+    VERBATIM
+)
+
+add_custom_command(
+    OUTPUT ${QE6502_JAVA_SOURCES_JAR}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${QE6502_JAVA_OUTPUT_DIR}
+    COMMAND ${Java_JAR_EXECUTABLE}
+        --create
+        --file ${QE6502_JAVA_SOURCES_JAR}
+        -C ${QE6502_JAVA_SOURCE_DIR} .
+        -C ${QE6502_JAVA_GENERATED_SOURCE_DIR} .
+    DEPENDS
+        ${QE6502_JAVA_SOURCES}
+    COMMENT "Building qe6502 Java sources jar"
+    VERBATIM
+)
+
+add_custom_command(
+    OUTPUT ${QE6502_JAVA_JAVADOC_JAR}
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${QE6502_JAVA_JAVADOC_DIR}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${QE6502_JAVA_JAVADOC_DIR}
+    COMMAND ${QE6502_JAVADOC_EXECUTABLE}
+        --release 25
+        -quiet
+        -d ${QE6502_JAVA_JAVADOC_DIR}
+        ${QE6502_JAVA_SOURCES}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${QE6502_JAVA_OUTPUT_DIR}
+    COMMAND ${Java_JAR_EXECUTABLE}
+        --create
+        --file ${QE6502_JAVA_JAVADOC_JAR}
+        -C ${QE6502_JAVA_JAVADOC_DIR} .
+    DEPENDS
+        ${QE6502_JAVA_SOURCES}
+    COMMENT "Building qe6502 Java javadoc jar"
+    VERBATIM
+)
+
+add_custom_target(qe6502_java ALL
+    DEPENDS
+        ${QE6502_JAVA_JAR}
+        ${QE6502_JAVA_SOURCES_JAR}
+        ${QE6502_JAVA_JAVADOC_JAR}
+)
+
+set(QE6502_JAVA_PACKAGE_DIR ${CMAKE_CURRENT_BINARY_DIR}/package/qe6502-java-${QE6502_PACKAGE_VERSION})
+set(QE6502_JAVA_PACKAGE_JAR ${QE6502_JAVA_PACKAGE_DIR}/qe6502-java.jar)
+set(QE6502_JAVA_PACKAGE_SOURCES_JAR ${QE6502_JAVA_PACKAGE_DIR}/qe6502-java-sources.jar)
+set(QE6502_JAVA_PACKAGE_JAVADOC_JAR ${QE6502_JAVA_PACKAGE_DIR}/qe6502-java-javadoc.jar)
+set(QE6502_JAVA_PACKAGE_README ${QE6502_JAVA_PACKAGE_DIR}/README.md)
+set(QE6502_JAVA_PACKAGE_LICENSE ${QE6502_JAVA_PACKAGE_DIR}/LICENSE)
+set(QE6502_JAVA_PACKAGE_POM ${QE6502_JAVA_PACKAGE_DIR}/pom.xml)
+
+add_custom_command(
+    OUTPUT
+        ${QE6502_JAVA_PACKAGE_JAR}
+        ${QE6502_JAVA_PACKAGE_SOURCES_JAR}
+        ${QE6502_JAVA_PACKAGE_JAVADOC_JAR}
+        ${QE6502_JAVA_PACKAGE_README}
+        ${QE6502_JAVA_PACKAGE_LICENSE}
+        ${QE6502_JAVA_PACKAGE_POM}
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${QE6502_JAVA_PACKAGE_DIR}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${QE6502_JAVA_PACKAGE_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${QE6502_JAVA_JAR}
+        ${QE6502_JAVA_PACKAGE_JAR}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${QE6502_JAVA_SOURCES_JAR}
+        ${QE6502_JAVA_PACKAGE_SOURCES_JAR}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${QE6502_JAVA_JAVADOC_JAR}
+        ${QE6502_JAVA_PACKAGE_JAVADOC_JAR}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/README.md
+        ${QE6502_JAVA_PACKAGE_README}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/LICENSE
+        ${QE6502_JAVA_PACKAGE_LICENSE}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${QE6502_JAVA_CONFIGURED_POM}
+        ${QE6502_JAVA_PACKAGE_POM}
+    DEPENDS
+        qe6502_java
+        ${CMAKE_CURRENT_SOURCE_DIR}/README.md
+        ${CMAKE_SOURCE_DIR}/LICENSE
+        ${CMAKE_CURRENT_SOURCE_DIR}/pom.xml.in
+        ${QE6502_JAVA_CONFIGURED_POM}
+    COMMENT "Staging qe6502 Java package for ${QE6502_JAVA_PLATFORM_ID}"
+    VERBATIM
+)
+
+add_custom_target(qe6502_java_package_stage
+    DEPENDS
+        ${QE6502_JAVA_PACKAGE_JAR}
+        ${QE6502_JAVA_PACKAGE_SOURCES_JAR}
+        ${QE6502_JAVA_PACKAGE_JAVADOC_JAR}
+        ${QE6502_JAVA_PACKAGE_README}
+        ${QE6502_JAVA_PACKAGE_LICENSE}
+        ${QE6502_JAVA_PACKAGE_POM}
+)
+
+set(QE6502_JAVA_MAVEN_PUBLISH_DIR ${CMAKE_CURRENT_BINARY_DIR}/maven-publish)
+set(QE6502_JAVA_MAVEN_CENTRAL_BUNDLE ${CMAKE_CURRENT_BINARY_DIR}/qe6502-java-maven-central-${QE6502_JAVA_MAVEN_VERSION}.zip)
+
+add_custom_target(qe6502_java_maven_publish_layout
+    COMMAND ${CMAKE_COMMAND}
+        -DQE6502_JAVA_PACKAGE_DIR=${QE6502_JAVA_PACKAGE_DIR}
+        -DQE6502_JAVA_MAVEN_PUBLISH_DIR=${QE6502_JAVA_MAVEN_PUBLISH_DIR}
+        -DQE6502_JAVA_MAVEN_GROUP_ID=${QE6502_JAVA_MAVEN_GROUP_ID}
+        -DQE6502_JAVA_MAVEN_ARTIFACT_ID=${QE6502_JAVA_MAVEN_ARTIFACT_ID}
+        -DQE6502_JAVA_MAVEN_VERSION=${QE6502_JAVA_MAVEN_VERSION}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_maven_publish_layout.cmake
+    DEPENDS qe6502_java_package_stage
+    COMMENT "Staging qe6502 Java Maven publish layout"
+    VERBATIM
+)
+
+if(QE6502_GPG_EXECUTABLE)
+    add_custom_target(qe6502_java_maven_sign_artifacts
+        COMMAND ${CMAKE_COMMAND}
+            -DQE6502_GPG_EXECUTABLE=${QE6502_GPG_EXECUTABLE}
+            -DQE6502_JAVA_MAVEN_PUBLISH_DIR=${QE6502_JAVA_MAVEN_PUBLISH_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_sign_maven_artifacts.cmake
+        DEPENDS qe6502_java_maven_publish_layout
+        COMMENT "Signing qe6502 Java Maven artifacts with GPG"
+        VERBATIM
+    )
+
+    add_custom_target(qe6502_java_maven_generate_checksums
+        COMMAND ${CMAKE_COMMAND}
+            -DQE6502_JAVA_MAVEN_PUBLISH_DIR=${QE6502_JAVA_MAVEN_PUBLISH_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_generate_maven_checksums.cmake
+        DEPENDS qe6502_java_maven_sign_artifacts
+        COMMENT "Generating qe6502 Java Maven checksums"
+        VERBATIM
+    )
+
+    add_custom_target(qe6502_java_maven_verify_central_bundle
+        COMMAND ${CMAKE_COMMAND}
+            -DQE6502_JAVA_MAVEN_PUBLISH_DIR=${QE6502_JAVA_MAVEN_PUBLISH_DIR}
+            -DQE6502_JAVA_MAVEN_GROUP_ID=${QE6502_JAVA_MAVEN_GROUP_ID}
+            -DQE6502_JAVA_MAVEN_ARTIFACT_ID=${QE6502_JAVA_MAVEN_ARTIFACT_ID}
+            -DQE6502_JAVA_MAVEN_VERSION=${QE6502_JAVA_MAVEN_VERSION}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_verify_maven_central_bundle.cmake
+        DEPENDS qe6502_java_maven_generate_checksums
+        COMMENT "Verifying qe6502 Java Maven Central publish layout"
+        VERBATIM
+    )
+
+    add_custom_target(qe6502_java_maven_central_bundle
+        COMMAND ${CMAKE_COMMAND}
+            -DQE6502_JAVA_MAVEN_PUBLISH_DIR=${QE6502_JAVA_MAVEN_PUBLISH_DIR}
+            -DQE6502_JAVA_MAVEN_CENTRAL_BUNDLE=${QE6502_JAVA_MAVEN_CENTRAL_BUNDLE}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_package_maven_central_bundle.cmake
+        DEPENDS qe6502_java_maven_verify_central_bundle
+        COMMENT "Packaging qe6502 Java Maven Central upload bundle"
+        VERBATIM
+    )
+else()
+    message(STATUS "GPG executable not found; skipping qe6502 Java Maven Central bundle target")
+endif()
+
+set(QE6502_JAVA_RUNTIME_ASSET_DIR ${CMAKE_CURRENT_BINARY_DIR}/runtime-asset)
+set(QE6502_JAVA_RUNTIME_ASSET_NATIVE_DIR
+    ${QE6502_JAVA_RUNTIME_ASSET_DIR}/qe6502/native/${QE6502_JAVA_PLATFORM_ID}
+)
+
+if(QE6502_JAVA_PLATFORM_SUPPORTED)
+    add_custom_target(qe6502_java_stage_runtime_asset
+        COMMAND ${CMAKE_COMMAND} -E remove_directory ${QE6502_JAVA_RUNTIME_ASSET_DIR}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${QE6502_JAVA_RUNTIME_ASSET_NATIVE_DIR}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:qe6502_shared>
+            ${QE6502_JAVA_RUNTIME_ASSET_NATIVE_DIR}/${QE6502_JAVA_NATIVE_LIBRARY_NAME}
+        DEPENDS qe6502_shared
+        COMMENT "Staging qe6502 Java native runtime asset for ${QE6502_JAVA_PLATFORM_ID}"
+        VERBATIM
+    )
+endif()
+
+set(QE6502_JAVA_PACKAGE_SMOKE_DIR ${CMAKE_CURRENT_BINARY_DIR}/package-smoke)
+
+add_custom_target(qe6502_java_package_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DQE6502_JAVA_JAVAC_EXECUTABLE=${Java_JAVAC_EXECUTABLE}
+        -DQE6502_JAVA_JAVA_EXECUTABLE=${Java_JAVA_EXECUTABLE}
+        -DQE6502_JAVA_PACKAGE_JAR=${QE6502_JAVA_PACKAGE_JAR}
+        -DQE6502_JAVA_PACKAGE_SMOKE_DIR=${QE6502_JAVA_PACKAGE_SMOKE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_package_smoke.cmake
+    DEPENDS qe6502_java_package_stage
+    COMMENT "Running qe6502 Java package consumer smoke"
+    VERBATIM
+)
+
+set(QE6502_JAVA_MAVEN_SMOKE_DIR ${CMAKE_CURRENT_BINARY_DIR}/maven-package-smoke)
+
+if(QE6502_MAVEN_EXECUTABLE)
+    add_custom_target(qe6502_java_maven_package_smoke
+        COMMAND ${CMAKE_COMMAND}
+            -DQE6502_MAVEN_EXECUTABLE=${QE6502_MAVEN_EXECUTABLE}
+            -DQE6502_JAVA_JAVA_EXECUTABLE=${Java_JAVA_EXECUTABLE}
+            -DQE6502_JAVA_PACKAGE_JAR=${QE6502_JAVA_PACKAGE_JAR}
+            -DQE6502_JAVA_PACKAGE_POM=${QE6502_JAVA_PACKAGE_POM}
+            -DQE6502_JAVA_MAVEN_SMOKE_DIR=${QE6502_JAVA_MAVEN_SMOKE_DIR}
+            -DQE6502_JAVA_MAVEN_GROUP_ID=${QE6502_JAVA_MAVEN_GROUP_ID}
+            -DQE6502_JAVA_MAVEN_ARTIFACT_ID=${QE6502_JAVA_MAVEN_ARTIFACT_ID}
+            -DQE6502_JAVA_MAVEN_VERSION=${QE6502_JAVA_MAVEN_VERSION}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_maven_package_smoke.cmake
+        DEPENDS qe6502_java_package_stage
+        COMMENT "Running qe6502 Java Maven package consumer smoke"
+        VERBATIM
+    )
+endif()
+
+set(QE6502_JAVA_JAR ${QE6502_JAVA_JAR} CACHE INTERNAL "qe6502 Java binding jar")
+set(QE6502_JAVA_SOURCES_JAR ${QE6502_JAVA_SOURCES_JAR} CACHE INTERNAL "qe6502 Java binding sources jar")
+set(QE6502_JAVA_JAVADOC_JAR ${QE6502_JAVA_JAVADOC_JAR} CACHE INTERNAL "qe6502 Java binding javadoc jar")
+set(QE6502_JAVA_OUTPUT_DIR ${QE6502_JAVA_OUTPUT_DIR} CACHE INTERNAL "qe6502 Java binding output directory")
+set(QE6502_JAVA_NATIVE_LIBRARY_NAME ${QE6502_JAVA_NATIVE_LIBRARY_NAME} CACHE INTERNAL "qe6502 Java native library filename")
+set(QE6502_JAVA_PACKAGE_DIR ${QE6502_JAVA_PACKAGE_DIR} CACHE INTERNAL "qe6502 Java package staging directory")
+set(QE6502_JAVA_PACKAGE_JAR ${QE6502_JAVA_PACKAGE_JAR} CACHE INTERNAL "qe6502 Java staged package jar")
+set(QE6502_JAVA_PACKAGE_SOURCES_JAR ${QE6502_JAVA_PACKAGE_SOURCES_JAR} CACHE INTERNAL "qe6502 Java staged package sources jar")
+set(QE6502_JAVA_PACKAGE_JAVADOC_JAR ${QE6502_JAVA_PACKAGE_JAVADOC_JAR} CACHE INTERNAL "qe6502 Java staged package javadoc jar")
+set(QE6502_JAVA_PACKAGE_POM ${QE6502_JAVA_PACKAGE_POM} CACHE INTERNAL "qe6502 Java staged package POM")
+set(QE6502_JAVA_RUNTIME_ASSET_DIR ${QE6502_JAVA_RUNTIME_ASSET_DIR} CACHE INTERNAL "qe6502 Java native runtime asset staging directory")
+
+set(QE6502_MAVEN_EXECUTABLE ${QE6502_MAVEN_EXECUTABLE} CACHE FILEPATH "Maven executable for qe6502 Java package smoke")
+set(QE6502_JAVADOC_EXECUTABLE ${QE6502_JAVADOC_EXECUTABLE} CACHE FILEPATH "Javadoc executable for qe6502 Java javadoc jar")
+set(QE6502_GPG_EXECUTABLE ${QE6502_GPG_EXECUTABLE} CACHE FILEPATH "GPG executable for qe6502 Java Maven artifact signing")
+set(QE6502_JAVA_MAVEN_PUBLISH_DIR ${QE6502_JAVA_MAVEN_PUBLISH_DIR} CACHE INTERNAL "qe6502 Java Maven publish layout directory")
+set(QE6502_JAVA_MAVEN_CENTRAL_BUNDLE ${QE6502_JAVA_MAVEN_CENTRAL_BUNDLE} CACHE INTERNAL "qe6502 Java Maven Central upload bundle")
+set(QE6502_JAVA_MAVEN_GROUP_ID ${QE6502_JAVA_MAVEN_GROUP_ID} CACHE INTERNAL "qe6502 Java Maven groupId")
+set(QE6502_JAVA_MAVEN_ARTIFACT_ID ${QE6502_JAVA_MAVEN_ARTIFACT_ID} CACHE INTERNAL "qe6502 Java Maven artifactId")
+set(QE6502_JAVA_MAVEN_VERSION ${QE6502_JAVA_MAVEN_VERSION} CACHE INTERNAL "qe6502 Java Maven version")
+
+set(QE6502_JAVA_PLATFORM_ID ${QE6502_JAVA_PLATFORM_ID} CACHE INTERNAL "qe6502 Java native platform id")
+set(QE6502_JAVA_PLATFORM_SUPPORTED ${QE6502_JAVA_PLATFORM_SUPPORTED} CACHE INTERNAL "whether qe6502 Java packaging supports the current native platform")

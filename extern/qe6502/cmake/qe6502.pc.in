@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/@QE6502_PC_PREFIX_FROM_PKGCONFIG_DIR@
+exec_prefix=${prefix}
+includedir=@QE6502_PC_INCLUDEDIR@
+libdir=@QE6502_PC_LIBDIR@
+
+Name: qe6502
+Description: qe6502 fast static C API
+Version: @PROJECT_VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} -lqe6502_static

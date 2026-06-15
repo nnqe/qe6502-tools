@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qe6502"
+version = "@QE6502_PACKAGE_VERSION@"
+description = "A lightweight bus-cycle 6502 CPU emulator for Python."
+readme = "README.md"
+requires-python = ">=@QE6502_PYTHON_STABLE_ABI_MINIMUM@"
+license = { text = "MIT" }
+authors = [
+  { name = "Nikolay Nedelchev" }
+]
+keywords = [
+  "6502",
+  "65c02",
+  "emulator",
+  "cpu",
+  "cycle-accurate",
+  "bus-cycle",
+  "python",
+  "cpython",
+  "retrocomputing"
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: C",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Topic :: System :: Emulators"
+]
+
+[project.urls]
+Homepage = "https://github.com/nnqe/qe6502"
+Repository = "https://github.com/nnqe/qe6502"
+Issues = "https://github.com/nnqe/qe6502/issues"

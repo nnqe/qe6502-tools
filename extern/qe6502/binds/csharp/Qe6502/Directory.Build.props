@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup Condition="'$(Qe6502CMakeArtifactsRoot)' != ''">
+    <BaseOutputPath>$(Qe6502CMakeArtifactsRoot)/$(MSBuildProjectName)/bin/</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(Qe6502CMakeArtifactsRoot)/$(MSBuildProjectName)/obj/</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

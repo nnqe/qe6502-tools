@@ -1,0 +1,9 @@
+[package]
+name = "qe6502_rust_smoke"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+qe6502 = { path = "../../binds/rust" }

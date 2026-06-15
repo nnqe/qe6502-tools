@@ -1,0 +1,4 @@
+Manifest-Version: 1.0
+Main-Class: qe6502.klaus2m5.Main
+Class-Path: qe6502-java.jar
+

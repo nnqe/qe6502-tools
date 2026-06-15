@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+import sys
+from setuptools import Extension, setup
+
+extra_compile_args: list[str] = []
+if sys.platform != "win32":
+    extra_compile_args.extend(["-std=c11"])
+
+setup(
+    packages=["qe6502"],
+    ext_modules=[
+        Extension(
+            "_qe6502",
+            sources=[
+                "_qe6502.c",
+                "native/src/qe6502.c",
+            ],
+            include_dirs=["native/include"],
+            define_macros=[
+                ("Py_LIMITED_API", "@QE6502_PYTHON_LIMITED_API_HEX@"),
+                ("QE6502_STATIC", "1"),
+                ("QE6502_BUILD_SHARED", "0"),
+            ],
+            py_limited_api=True,
+            extra_compile_args=extra_compile_args,
+        )
+    ],
+)

@@ -1,0 +1,146 @@
+find_program(DOTNET_EXECUTABLE dotnet)
+
+if(NOT DOTNET_EXECUTABLE)
+    message(STATUS "dotnet not found; skipping qe6502 C# binding")
+    return()
+endif()
+
+if(NOT TARGET qe6502_shared)
+    message(STATUS "qe6502_shared target is not available; skipping qe6502 C# binding")
+    return()
+endif()
+
+
+set(QE6502_CSHARP_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+set(QE6502_CSHARP_GENERATED_VERSION_SOURCE
+    ${QE6502_CSHARP_GENERATED_DIR}/Qe6502Version.g.cs
+    CACHE INTERNAL "Generated qe6502 C# version source"
+)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/Qe6502/Qe6502Version.g.cs.in
+    ${QE6502_CSHARP_GENERATED_VERSION_SOURCE}
+    @ONLY
+)
+
+set(QE6502_CSHARP_CONFIGURATION "$<IF:$<CONFIG:Debug>,Debug,Release>")
+set(QE6502_CSHARP_PROJECT ${CMAKE_CURRENT_SOURCE_DIR}/Qe6502/Qe6502.csproj)
+set(QE6502_CSHARP_OUTPUT_DIR
+    ${CMAKE_CURRENT_BINARY_DIR}/Qe6502/bin/${QE6502_CSHARP_CONFIGURATION}/netstandard2.0
+)
+
+if(WIN32)
+    set(QE6502_CSHARP_NATIVE_LIBRARY_NAME "$<TARGET_FILE_NAME:qe6502_shared>")
+    set(QE6502_CSHARP_NATIVE_PACKAGE_SOURCE "$<TARGET_FILE:qe6502_shared>")
+else()
+    set(QE6502_CSHARP_NATIVE_LIBRARY_NAME "$<TARGET_LINKER_FILE_NAME:qe6502_shared>")
+    set(QE6502_CSHARP_NATIVE_PACKAGE_SOURCE "$<TARGET_LINKER_FILE:qe6502_shared>")
+endif()
+
+
+
+set(QE6502_CSHARP_RUNTIME_RID)
+if(WIN32)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$")
+        set(QE6502_CSHARP_RUNTIME_RID win-arm64)
+    else()
+        set(QE6502_CSHARP_RUNTIME_RID win-x64)
+    endif()
+elseif(APPLE)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+        set(QE6502_CSHARP_RUNTIME_RID osx-arm64)
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+        set(QE6502_CSHARP_RUNTIME_RID osx-x64)
+    endif()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+        set(QE6502_CSHARP_RUNTIME_RID linux-arm64)
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+        set(QE6502_CSHARP_RUNTIME_RID linux-x64)
+    endif()
+endif()
+
+if(QE6502_CSHARP_RUNTIME_RID)
+    message(STATUS "  QE6502_CSHARP_RUNTIME_RID = ${QE6502_CSHARP_RUNTIME_RID}")
+else()
+    message(STATUS "  QE6502_CSHARP_RUNTIME_RID = unsupported (${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}); package targets disabled")
+endif()
+
+set(QE6502_CSHARP_PACKAGE_VERSION "${QE6502_PACKAGE_VERSION}")
+set(QE6502_CSHARP_PACKAGE_DIR ${CMAKE_CURRENT_BINARY_DIR}/nuget/${QE6502_CSHARP_CONFIGURATION})
+set(QE6502_CSHARP_PACKAGE_STAGE_DIR ${CMAKE_CURRENT_BINARY_DIR}/package-stage/${QE6502_CSHARP_CONFIGURATION})
+set(QE6502_CSHARP_PACKAGE_NATIVE_DIR
+    ${QE6502_CSHARP_PACKAGE_STAGE_DIR}/runtimes/${QE6502_CSHARP_RUNTIME_RID}/native
+)
+set(QE6502_CSHARP_RUNTIME_ASSET_DIR ${CMAKE_CURRENT_BINARY_DIR}/runtime-asset/${QE6502_CSHARP_CONFIGURATION})
+set(QE6502_CSHARP_RUNTIME_ASSET_NATIVE_DIR
+    ${QE6502_CSHARP_RUNTIME_ASSET_DIR}/runtimes/${QE6502_CSHARP_RUNTIME_RID}/native
+)
+
+add_custom_target(qe6502_csharp ALL
+    COMMAND ${DOTNET_EXECUTABLE} build ${QE6502_CSHARP_PROJECT}
+        --configuration ${QE6502_CSHARP_CONFIGURATION}
+        -p:Platform=AnyCPU
+        -p:PlatformTarget=AnyCPU
+        -p:Version=${QE6502_CSHARP_PACKAGE_VERSION}
+        -p:Qe6502CMakeArtifactsRoot=${CMAKE_CURRENT_BINARY_DIR}
+        -p:Qe6502GeneratedVersionSource=${QE6502_CSHARP_GENERATED_VERSION_SOURCE}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${QE6502_CSHARP_OUTPUT_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:qe6502_shared>
+        ${QE6502_CSHARP_OUTPUT_DIR}/${QE6502_CSHARP_NATIVE_LIBRARY_NAME}
+    DEPENDS qe6502_shared
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Building qe6502 C# binding"
+    VERBATIM
+)
+
+
+if(QE6502_CSHARP_RUNTIME_RID)
+    add_custom_target(qe6502_csharp_stage_runtime_asset
+        COMMAND ${CMAKE_COMMAND} -E remove_directory ${QE6502_CSHARP_RUNTIME_ASSET_DIR}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${QE6502_CSHARP_RUNTIME_ASSET_NATIVE_DIR}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${QE6502_CSHARP_NATIVE_PACKAGE_SOURCE}
+            ${QE6502_CSHARP_RUNTIME_ASSET_NATIVE_DIR}/${QE6502_CSHARP_NATIVE_LIBRARY_NAME}
+        DEPENDS qe6502_shared ${QE6502_CSHARP_GENERATED_VERSION_SOURCE}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Staging qe6502 C# native runtime asset for ${QE6502_CSHARP_RUNTIME_RID}"
+        VERBATIM
+    )
+
+    add_custom_target(qe6502_csharp_pack
+        COMMAND ${CMAKE_COMMAND} -E remove_directory ${QE6502_CSHARP_PACKAGE_STAGE_DIR}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${QE6502_CSHARP_PACKAGE_NATIVE_DIR}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${QE6502_CSHARP_NATIVE_PACKAGE_SOURCE}
+            ${QE6502_CSHARP_PACKAGE_NATIVE_DIR}/${QE6502_CSHARP_NATIVE_LIBRARY_NAME}
+        COMMAND ${DOTNET_EXECUTABLE} pack ${QE6502_CSHARP_PROJECT}
+            --configuration ${QE6502_CSHARP_CONFIGURATION}
+            --no-build
+            -p:Platform=AnyCPU
+            -p:PlatformTarget=AnyCPU
+            -p:Version=${QE6502_CSHARP_PACKAGE_VERSION}
+            -p:Qe6502CMakeArtifactsRoot=${CMAKE_CURRENT_BINARY_DIR}
+            -p:Qe6502GeneratedVersionSource=${QE6502_CSHARP_GENERATED_VERSION_SOURCE}
+            -p:PackageOutputPath=${QE6502_CSHARP_PACKAGE_DIR}
+            -p:Qe6502NativeRuntimeRid=${QE6502_CSHARP_RUNTIME_RID}
+            -p:Qe6502NativeRuntimeLibrary=${QE6502_CSHARP_PACKAGE_NATIVE_DIR}/${QE6502_CSHARP_NATIVE_LIBRARY_NAME}
+        DEPENDS qe6502_csharp qe6502_shared
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Packing qe6502 C# NuGet package for ${QE6502_CSHARP_RUNTIME_RID}"
+        VERBATIM
+    )
+
+    add_custom_target(qe6502_csharp_package_smoke
+        COMMAND ${CMAKE_COMMAND}
+            -DDOTNET_EXECUTABLE=${DOTNET_EXECUTABLE}
+            -DQE6502_CSHARP_PACKAGE_DIR=${QE6502_CSHARP_PACKAGE_DIR}
+            -DQE6502_CSHARP_PACKAGE_VERSION=${QE6502_CSHARP_PACKAGE_VERSION}
+            -DQE6502_CSHARP_SMOKE_DIR=${CMAKE_CURRENT_BINARY_DIR}/package-smoke/${QE6502_CSHARP_CONFIGURATION}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunPackageSmoke.cmake
+        DEPENDS qe6502_csharp_pack
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Testing qe6502 C# NuGet package for ${QE6502_CSHARP_RUNTIME_RID}"
+        VERBATIM
+    )
+endif()

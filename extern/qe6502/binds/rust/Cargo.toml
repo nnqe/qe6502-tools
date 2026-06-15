@@ -1,0 +1,20 @@
+[package]
+name = "qe6502"
+# Development-tree placeholder; package_crate.py rewrites this from qe6502_version.h or CMake.
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.70"
+license = "MIT"
+description = "Safe Rust bindings for the qe6502 6502/65C02 CPU core"
+repository = "https://github.com/nnqe/qe6502"
+keywords = ["6502", "65c02", "emulator"]
+categories = ["emulators", "api-bindings"]
+links = "qe6502"
+publish = false
+
+[build-dependencies]
+cc = "1"
+
+[lib]
+name = "qe6502"
+path = "src/lib.rs"

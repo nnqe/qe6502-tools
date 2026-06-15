@@ -1,0 +1,41 @@
+{
+  "name": "qe6502",
+  "version": "@QE6502_PACKAGE_VERSION@",
+  "description": "A lightweight bus-cycle 6502 CPU emulator for JavaScript and WebAssembly.",
+  "type": "module",
+  "exports": {
+    ".": "./qe6502.js",
+    "./qe6502_js.wasm": "./qe6502_js.wasm"
+  },
+  "files": [
+    "qe6502.js",
+    "qe6502_js.wasm",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "author": "Nikolay Nedelchev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nnqe/qe6502.git"
+  },
+  "homepage": "https://github.com/nnqe/qe6502#readme",
+  "bugs": {
+    "url": "https://github.com/nnqe/qe6502/issues"
+  },
+  "keywords": [
+    "6502",
+    "65c02",
+    "emulator",
+    "cpu",
+    "cycle-accurate",
+    "bus-cycle",
+    "wasm",
+    "webassembly",
+    "javascript",
+    "retrocomputing"
+  ]
+}

@@ -1,0 +1,57 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/qe6502Targets.cmake")
+
+if(NOT TARGET qe6502::cpp)
+    if(TARGET qe6502::cpp_static)
+        add_library(qe6502::cpp INTERFACE IMPORTED)
+        set_target_properties(qe6502::cpp PROPERTIES
+            INTERFACE_LINK_LIBRARIES qe6502::cpp_static
+        )
+    elseif(TARGET qe6502::cpp_shared)
+        add_library(qe6502::cpp INTERFACE IMPORTED)
+        set_target_properties(qe6502::cpp PROPERTIES
+            INTERFACE_LINK_LIBRARIES qe6502::cpp_shared
+        )
+    endif()
+endif()
+
+if(TARGET qe6502::static OR TARGET qe6502::shared)
+    set(qe6502_C_FOUND TRUE)
+else()
+    set(qe6502_C_FOUND FALSE)
+endif()
+
+if(TARGET qe6502::static)
+    set(qe6502_Static_FOUND TRUE)
+else()
+    set(qe6502_Static_FOUND FALSE)
+endif()
+
+if(TARGET qe6502::shared)
+    set(qe6502_Shared_FOUND TRUE)
+    set(qe6502_ABI_FOUND TRUE)
+else()
+    set(qe6502_Shared_FOUND FALSE)
+    set(qe6502_ABI_FOUND FALSE)
+endif()
+
+if(TARGET qe6502::cpp)
+    set(qe6502_CXX_FOUND TRUE)
+else()
+    set(qe6502_CXX_FOUND FALSE)
+endif()
+
+if(TARGET qe6502::cpp_static)
+    set(qe6502_CXX_STATIC_FOUND TRUE)
+else()
+    set(qe6502_CXX_STATIC_FOUND FALSE)
+endif()
+
+if(TARGET qe6502::cpp_shared)
+    set(qe6502_CXX_SHARED_FOUND TRUE)
+else()
+    set(qe6502_CXX_SHARED_FOUND FALSE)
+endif()
+
+check_required_components(qe6502)
