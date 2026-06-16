@@ -12,7 +12,7 @@
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
  */
 
-#include <qe_appleII.h>
+#include <qeaii.h>
 
 ///////////////////////////////////////////////////////
 //                  KEYBOARD
@@ -95,7 +95,7 @@ QE_SIC
 void video_init(qeaii_t* pc, qeaii_bootstrap_t* bootstrap)
 {
     QE_CLEAR_OBJ(pc->video);
-    pc->video.is_text = qe_true;
+    pc->video.is_text = true;
     pc->video.current_frame = 1;
 
     // Generate font
@@ -128,14 +128,14 @@ void video_softswitch_write(qeaii_t* pc, uint8_t softswitch)
 {
     switch(softswitch)
     {
-    case 0x50: pc->video.is_text  = qe_false;   break;  // 0xc050
-    case 0x51: pc->video.is_text  = qe_true;    break;  // 0xc051
-    case 0x52: pc->video.is_mixed = qe_false;   break;  // 0xc052
-    case 0x53: pc->video.is_mixed = qe_true;    break;  // 0xc053
-    case 0x54: pc->video.is_page2 = qe_false;   break;  // 0xc054
-    case 0x55: pc->video.is_page2 = qe_true;    break;  // 0xc055
-    case 0x56: pc->video.is_hires = qe_false;   break;  // 0xc056
-    case 0x57: pc->video.is_hires = qe_true;    break;  // 0xc057
+    case 0x50: pc->video.is_text  = false;   break;  // 0xc050
+    case 0x51: pc->video.is_text  = true;    break;  // 0xc051
+    case 0x52: pc->video.is_mixed = false;   break;  // 0xc052
+    case 0x53: pc->video.is_mixed = true;    break;  // 0xc053
+    case 0x54: pc->video.is_page2 = false;   break;  // 0xc054
+    case 0x55: pc->video.is_page2 = true;    break;  // 0xc055
+    case 0x56: pc->video.is_hires = false;   break;  // 0xc056
+    case 0x57: pc->video.is_hires = true;    break;  // 0xc057
     default:break;
     }
 }
@@ -283,15 +283,15 @@ void speaker_io(qeaii_t* pc)
 QE_API_IMPL
 void qeaii_mount_disk0(qeaii_t* pc, qeaii_diskette_t* diskette)
 {
-    pc->driveII.drives[0].is_mount = qe_true;
-    pc->driveII.drives[0].diskette.changed = qe_false;
+    pc->driveII.drives[0].is_mount = true;
+    pc->driveII.drives[0].diskette.changed = false;
     QE_COPY_OBJ(pc->driveII.drives[0].diskette, *diskette);
 }
 
 QE_API_IMPL
 void qeaii_unmount_disk0(qeaii_t* pc)
 {
-    pc->driveII.drives[0].is_mount = qe_false;
+    pc->driveII.drives[0].is_mount = false;
 }
 
 QE_SIC
@@ -300,7 +300,7 @@ void driveII_init(qeaii_t* pc, qeaii_bootstrap_t* bootstrap)
     QE_CLEAR_OBJ(pc->driveII);
     if (bootstrap->mount_disk0)
     {
-        pc->driveII.drives[0].is_mount = qe_true;
+        pc->driveII.drives[0].is_mount = true;
         QE_COPY_OBJ(pc->driveII.drives[0].diskette, bootstrap->disk0);
     }
 }
@@ -308,7 +308,7 @@ void driveII_init(qeaii_t* pc, qeaii_bootstrap_t* bootstrap)
 QE_SIC
 void driveII_phase_on(qeaii_drive_state_t* drive, uint8_t phase)
 {
-    drive->phases[phase] = qe_true;
+    drive->phases[phase] = true;
     uint8_t direction = QE_U8( (phase - drive->phase + 4) % 4 );
     if (direction == 1)
     {
@@ -329,7 +329,7 @@ void driveII_phase_on(qeaii_drive_state_t* drive, uint8_t phase)
 }
 
 QE_SIC
-uint8_t driveII_latch_event(qeaii_drive_state_t* drive, uint8_t data, qe_bool sw_reading)
+uint8_t driveII_latch_event(qeaii_drive_state_t* drive, uint8_t data, bool sw_reading)
 {
     if (drive->q7)
     {
@@ -341,7 +341,7 @@ uint8_t driveII_latch_event(qeaii_drive_state_t* drive, uint8_t data, qe_bool sw
         {
             drive->diskette.data[ drive->track * qeaii_disk_track_size + drive->track_pos] = data;
             drive->track_pos = QE_U16( (drive->track_pos + 1) % qeaii_disk_track_size );
-            drive->diskette.changed = qe_true;
+            drive->diskette.changed = true;
         }
         return 0x0;
     }
@@ -365,7 +365,7 @@ uint8_t driveII_latch_event(qeaii_drive_state_t* drive, uint8_t data, qe_bool sw
 }
 
 QE_SIC
-uint8_t driveII_process_softswitch(qeaii_t* pc, uint8_t softswitch, uint8_t data, qe_bool sw_reading)
+uint8_t driveII_process_softswitch(qeaii_t* pc, uint8_t softswitch, uint8_t data, bool sw_reading)
 {
     qeaii_drive_state_t* drive = &pc->driveII.drives[ pc->driveII.active_drive ];
     if (!drive->is_mount)
@@ -377,7 +377,7 @@ uint8_t driveII_process_softswitch(qeaii_t* pc, uint8_t softswitch, uint8_t data
         if (softswitch == 0xe9)
         {
             // Disk spinning
-            pc->driveII.spinning = qe_true;
+            pc->driveII.spinning = true;
         }
         return 0x0;
     }
@@ -385,24 +385,24 @@ uint8_t driveII_process_softswitch(qeaii_t* pc, uint8_t softswitch, uint8_t data
     switch (softswitch)
     {
     // Track step movement phases [0; 3]
-    case 0xe0:   drive->phases[0] = qe_false;        return 0x00;
+    case 0xe0:   drive->phases[0] = false;        return 0x00;
     case 0xe1:   driveII_phase_on(drive, 0);         return 0x00;
-    case 0xe2:   drive->phases[1] = qe_false;        return 0x00;
+    case 0xe2:   drive->phases[1] = false;        return 0x00;
     case 0xe3:   driveII_phase_on(drive, 1);         return 0x00;
-    case 0xe4:   drive->phases[2] = qe_false;        return 0x00;
+    case 0xe4:   drive->phases[2] = false;        return 0x00;
     case 0xe5:   driveII_phase_on(drive, 2);         return 0x00;
-    case 0xe6:   drive->phases[3] = qe_false;        return 0x00;
+    case 0xe6:   drive->phases[3] = false;        return 0x00;
     case 0xe7:   driveII_phase_on(drive, 3);         return 0x00;
     // Disk spinning
-    case 0xe8:   pc->driveII.spinning = qe_false;    return 0x0;
+    case 0xe8:   pc->driveII.spinning = false;    return 0x0;
     // Select drive
     case 0xeA:   pc->driveII.active_drive = 0;       return 0x00;
     case 0xeB:   pc->driveII.active_drive = 1;       return 0x00;
     // Data read/write
-    case 0xeC:   drive->q6 = qe_false;               return driveII_latch_event(drive, data, sw_reading);
-    case 0xeD:   drive->q6 = qe_true;                return driveII_latch_event(drive, data, sw_reading);
-    case 0xeE:   drive->q7 = qe_false;               return driveII_latch_event(drive, data, sw_reading);
-    case 0xeF:   drive->q7 = qe_true;                return driveII_latch_event(drive, data, sw_reading);
+    case 0xeC:   drive->q6 = false;               return driveII_latch_event(drive, data, sw_reading);
+    case 0xeD:   drive->q6 = true;                return driveII_latch_event(drive, data, sw_reading);
+    case 0xeE:   drive->q7 = false;               return driveII_latch_event(drive, data, sw_reading);
+    case 0xeF:   drive->q7 = true;                return driveII_latch_event(drive, data, sw_reading);
     default: break;
     }
     return 0x00;
@@ -411,13 +411,13 @@ uint8_t driveII_process_softswitch(qeaii_t* pc, uint8_t softswitch, uint8_t data
 QE_SIC
 uint8_t driveII_read(qeaii_t* pc, uint8_t softswitch)
 {
-    return driveII_process_softswitch(pc, softswitch, 0, qe_true);
+    return driveII_process_softswitch(pc, softswitch, 0, true);
 }
 
 QE_SIC
 void driveII_write(qeaii_t* pc, uint8_t softswitch, uint8_t data)
 {
-    driveII_process_softswitch(pc, softswitch, data, qe_false);
+    driveII_process_softswitch(pc, softswitch, data, false);
 }
 
 ///////////////////////////////////////////////////////
@@ -521,7 +521,7 @@ void bus_clock(qeaii_t *pc)
 QE_SIC
 void cpu_init(qeaii_t *pc)
 {
-    pc->nmi = qe_false;
+    pc->nmi = false;
     pc->cycle = qe6502_power_on(&pc->cpu, qe6502_mos);
     pc->is_ok = qe6502_ok(&pc->cpu);
 }
@@ -545,7 +545,7 @@ void cpu_handle_nmi(qeaii_t *pc)
     {
         pc->cpu.PC.u8_lsb = pc->bus.memory.data[ 0xFFFA ];
         pc->cpu.PC.u8_msb = pc->bus.memory.data[ 0xFFFB ];
-        pc->nmi = qe_false;
+        pc->nmi = false;
     }
 }
 
@@ -554,7 +554,7 @@ void cpu_handle_nmi(qeaii_t *pc)
 ///////////////////////////////////////////////////////
 
 QE_API_IMPL
-qe_bool qeaii_power_on(qeaii_t *pc, qeaii_bootstrap_t* bootstrap)
+bool qeaii_power_on(qeaii_t *pc, qeaii_bootstrap_t* bootstrap)
 {
     pc->ex_video_handler = bootstrap->ex_video_handler;
     pc->ex_bus_handler = bootstrap->ex_bus_handler;
@@ -570,7 +570,7 @@ qe_bool qeaii_power_on(qeaii_t *pc, qeaii_bootstrap_t* bootstrap)
 }
 
 QE_API_IMPL
-qe_bool qeaii_pc_ok(qeaii_t* pc)
+bool qeaii_pc_ok(qeaii_t* pc)
 {
     return qe6502_ok(&pc->cpu);
 }
@@ -611,17 +611,17 @@ uint32_t qeaii_run_ex(qeaii_t* pc, uint32_t requested_cycles)
     while((pc->cycle_counter < target_cycles) && (!pc->stop_flags))
     {
         if (QE_NULL == pc->ex_video_handler ||
-            qe_false == pc->ex_video_handler(pc))
+            false == pc->ex_video_handler(pc))
         {
             video_clock(pc);
         }
         if (QE_NULL == pc->ex_bus_handler ||
-            qe_false == pc->ex_bus_handler(pc))
+            false == pc->ex_bus_handler(pc))
         {
             bus_clock(pc);
         }
         if (QE_NULL == pc->ex_cpu_handler ||
-            qe_false == pc->ex_cpu_handler(pc))
+            false == pc->ex_cpu_handler(pc))
         {
             cpu_clock(pc);
         }
@@ -636,13 +636,13 @@ void qeaii_press_key(qeaii_t *pc, uint8_t key)
 }
 
 QE_API_IMPL
-qe_bool qeaii_disk_active(qeaii_t *pc)
+bool qeaii_disk_active(qeaii_t *pc)
 {
     return pc->driveII.spinning;
 }
 
 QE_API_IMPL
-qe_bool qeaii_frame_ready(qeaii_t *pc)
+bool qeaii_frame_ready(qeaii_t *pc)
 {
     return (pc->stop_flags & qeaii_flag_new_frame) != 0;
 }
@@ -650,5 +650,5 @@ qe_bool qeaii_frame_ready(qeaii_t *pc)
 QE_API_IMPL
 void qeaii_break(qeaii_t *pc)
 {
-    pc->nmi = qe_true;
+    pc->nmi = true;
 }

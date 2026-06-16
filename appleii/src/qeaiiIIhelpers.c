@@ -1,4 +1,7 @@
-#include <qe_appleIIhelpers.h>
+#include <qeaiihelpers.h>
+
+
+#define QE_API_IMPL
 
 static const uint64_t nanos_per_65536_clocks = 64079653ULL;
 

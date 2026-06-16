@@ -12,11 +12,29 @@
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
  */
 
-#ifndef QE_APPLEII_H__
-#define QE_APPLEII_H__
+#ifndef QEAII_H
+#define QEAII_H
 
-#include <qe_utils.h>
-#include <qe_6502.h>
+#include <qe6502/qe6502.h>
+
+#ifndef QEAII_STATIC_ASSERT
+# ifdef __cplusplus
+#  define QEAII_STATIC_ASSERT(condition, message) static_assert((condition), message)
+# else
+#  define QEAII_STATIC_ASSERT(condition, message) _Static_assert((condition), message)
+# endif
+#endif
+
+#if defined(__GNUC__) || defined(__clang__)
+# define QEAII_MAYBE_UNUSED __attribute__((unused))
+#else
+# define QEAII_MAYBE_UNUSED
+#endif
+
+
+#define QE_API
+#define QE_SIC static inline
+#define QE_API_IMPL
 
 static const uint16_t qeaii_width = 280;
 static const uint16_t qeaii_height = 192;
@@ -31,30 +49,30 @@ static const uint16_t qeaii_disk_track_size = 0x1a00;
 static const uint8_t qeaii_flag_cpu_error = (1 << 7);
 static const uint8_t qeaii_flag_new_frame = (1 << 0);
 
-QE_MAYBE_UNUSED(qeaii_width);
-QE_MAYBE_UNUSED(qeaii_height);
-QE_MAYBE_UNUSED(qeaii_frame_size);
-QE_MAYBE_UNUSED(qeaii_pixels_per_clock);
-QE_MAYBE_UNUSED(qeaii_total_clocks_per_line);
-QE_MAYBE_UNUSED(qeaii_dummy_lines);
-QE_MAYBE_UNUSED(qeaii_clocks_per_line_visible_pixels);
-QE_MAYBE_UNUSED(qeaii_disk_tracks);
-QE_MAYBE_UNUSED(qeaii_disk_track_size);
-QE_MAYBE_UNUSED(qeaii_flag_cpu_error);
-QE_MAYBE_UNUSED(qeaii_flag_new_frame);
+QEAII_MAYBE_UNUSED(qeaii_width);
+QEAII_MAYBE_UNUSED(qeaii_height);
+QEAII_MAYBE_UNUSED(qeaii_frame_size);
+QEAII_MAYBE_UNUSED(qeaii_pixels_per_clock);
+QEAII_MAYBE_UNUSED(qeaii_total_clocks_per_line);
+QEAII_MAYBE_UNUSED(qeaii_dummy_lines);
+QEAII_MAYBE_UNUSED(qeaii_clocks_per_line_visible_pixels);
+QEAII_MAYBE_UNUSED(qeaii_disk_tracks);
+QEAII_MAYBE_UNUSED(qeaii_disk_track_size);
+QEAII_MAYBE_UNUSED(qeaii_flag_cpu_error);
+QEAII_MAYBE_UNUSED(qeaii_flag_new_frame);
 
 typedef struct
 {
-    qe_bool is_text;
-    qe_bool is_mixed;
-    qe_bool is_hires;
+    bool is_text;
+    bool is_mixed;
+    bool is_hires;
     uint8_t bitmap[280 * 192 / 7];
 } qeaii_frame_t;
 
 typedef struct
 {
-    qe_bool readonly;
-    qe_bool changed;
+    bool readonly;
+    bool changed;
     uint8_t data[0x1A00 * 35];
 } qeaii_diskette_t;
 
@@ -64,7 +82,7 @@ typedef struct
 } qeaii_memory_t;
 
 struct qeaii_appleII;
-typedef qe_bool (*user_handler_fn)( struct qeaii_appleII* pc );
+typedef bool (*user_handler_fn)( struct qeaii_appleII* pc );
 
 typedef struct
 {
@@ -74,12 +92,12 @@ typedef struct
 
 typedef struct
 {
-    qe_bool is_text;
-    qe_bool is_mixed;
-    qe_bool is_page2;
-    qe_bool is_hires;
+    bool is_text;
+    bool is_mixed;
+    bool is_page2;
+    bool is_hires;
 
-    qe_bool blink;
+    bool blink;
 
     uint16_t line;
     uint16_t col;
@@ -116,19 +134,19 @@ typedef struct
 
 typedef struct
 {
-    qe_bool is_mount;
-    qe_bool q6;
-    qe_bool q7;
+    bool is_mount;
+    bool q6;
+    bool q7;
     uint8_t phase;
     uint16_t track;           // from 0 to 34
     uint16_t track_pos;
-    qe_bool phases[4];
+    bool phases[4];
     qeaii_diskette_t diskette;
 } qeaii_drive_state_t;
 
 typedef struct
 {
-    qe_bool spinning;
+    bool spinning;
     uint8_t active_drive;
     qeaii_drive_state_t drives[2];
 } qeaii_driveII_t;
@@ -142,8 +160,8 @@ typedef struct qeaii_appleII
     qeaii_speaker_t speaker;
     qeaii_driveII_t driveII;
     qeaii_bus_t bus;
-    qe_bool nmi;
-    qe_bool is_ok;
+    bool nmi;
+    bool is_ok;
     uint64_t cycle_counter;
     uint8_t stop_flags;
     user_handler_fn ex_video_handler;
@@ -156,7 +174,7 @@ typedef struct
     uint8_t mem[0x10000];
     uint8_t font_rom[2048];
     qeaii_diskette_t disk0;
-    qe_bool mount_disk0;
+    bool mount_disk0;
     uint16_t first_rom_address;
     user_handler_fn ex_video_handler;
     user_handler_fn ex_bus_handler;
@@ -164,7 +182,7 @@ typedef struct
 } qeaii_bootstrap_t;
 
 QE_API
-qe_bool qeaii_power_on(qeaii_t* pc,
+bool qeaii_power_on(qeaii_t* pc,
                      qeaii_bootstrap_t* bootstrap);
 QE_API
 void qeaii_break(qeaii_t* pc);
@@ -178,24 +196,19 @@ QE_API
 uint32_t qeaii_run(qeaii_t* pc, uint32_t requested_cycles);
 QE_API
 uint32_t qeaii_run_ex(qeaii_t* pc, uint32_t requested_cycles);
-
 QE_API
-void qeaii_press_key(qeaii_t* pc,
-                   uint8_t key);
+void qeaii_press_key(qeaii_t* pc, uint8_t key);
 QE_API
-qeaii_speaker_frame_t*
-qeaii_speaker_frame(qeaii_t* pc);
-
+qeaii_speaker_frame_t* qeaii_speaker_frame(qeaii_t* pc);
 QE_API
-void qeaii_mount_disk0(qeaii_t* pc,
-                     qeaii_diskette_t* diskette);
+void qeaii_mount_disk0(qeaii_t* pc, qeaii_diskette_t* diskette);
 QE_API
 void qeaii_unmount_disk0(qeaii_t* pc);
 QE_API
-qe_bool qeaii_pc_ok(qeaii_t* pc);
+bool qeaii_pc_ok(qeaii_t* pc);
 QE_API
-qe_bool qeaii_disk_active(qeaii_t* pc);
+bool qeaii_disk_active(qeaii_t* pc);
 QE_API
-qe_bool qeaii_frame_ready(qeaii_t* pc);
+bool qeaii_frame_ready(qeaii_t* pc);
 
-#endif // QE_APPLEII_H__
+#endif /* QEAII_H */
