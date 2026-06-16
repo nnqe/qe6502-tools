@@ -127,19 +127,24 @@ typedef struct
 typedef struct
 {
     bool is_mount;
-    bool q6;
-    bool q7;
     uint8_t phase;
     uint16_t track;           // from 0 to 34
-    uint16_t track_pos;
+    uint16_t track_pos;       // angular NIB byte position within the current track
+    uint32_t spin_accumulator;
+    uint8_t read_latch;
+    bool read_latch_ready;
     bool phases[4];
     qeaii_diskette_t diskette;
 } qeaii_drive_state_t;
 
 typedef struct
 {
-    bool spinning;
+    bool spinning;             // selected drive is still mechanically rotating
+    bool motor_on;             // Disk II motor softswitch is on
+    bool q6;
+    bool q7;
     uint8_t active_drive;
+    uint32_t spin_down_cycles;
     qeaii_drive_state_t drives[2];
 } qeaii_driveII_t;
 

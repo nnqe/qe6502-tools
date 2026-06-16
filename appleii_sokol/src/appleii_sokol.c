@@ -355,8 +355,11 @@ static void make_graphics_resources(void)
     image_desc.width = QEAII_SCREEN_WIDTH;
     image_desc.height = QEAII_SCREEN_HEIGHT;
     image_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
-    image_desc.data.mip_levels[0].ptr = s_app.rgba;
-    image_desc.data.mip_levels[0].size = sizeof(s_app.rgba);
+    /*
+     * Sokol validation rule: images marked dynamic_update/stream_update are
+     * update targets and must be created without initial data.  The first
+     * pixels are uploaded by frame_cb() via sg_update_image(), before draw.
+     */
     image_desc.label = "appleii-frame";
     s_app.image = sg_make_image(&image_desc);
 
@@ -499,7 +502,13 @@ static void init_cb(void)
         return;
     }
     s_app.booted = true;
-    build_current_frame_pixels();
+    /*
+     * Upload the black startup texture on the first Sokol frame unless the
+     * emulator produces a real Apple II video frame first.  Do not call
+     * qeaii_frame() here: that function flips the Apple II video double buffer
+     * and must only be called after qeaii_frame_ready() reports a completed
+     * emulated frame.
+     */
     s_app.frame_upload_pending = true;
 }
 

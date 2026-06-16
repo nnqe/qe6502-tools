@@ -322,18 +322,102 @@ void speaker_io(qeaii_t* pc)
 //                  DRIVE II
 ///////////////////////////////////////////////////////
 
+/*
+ * Disk II media movement is a mechanical/time-domain effect, not an effect of
+ * the CPU reading the data softswitch.  Real loaders may briefly turn the motor
+ * off between sectors while they decode or copy data; the spindle coasts during
+ * that interval.  If the emulator freezes the angular position immediately on
+ * $C0E8, the sector interleave is lost and protected loaders can wait many
+ * unnecessary revolutions.
+ */
+#define QEAII_DISK_CYCLES_PER_REVOLUTION \
+    ((uint32_t)qeaii_total_clocks_per_line * (uint32_t)(qeaii_height + qeaii_dummy_lines) * 12u)
+#define QEAII_DISK_SPINDOWN_CYCLES (QEAII_DISK_CYCLES_PER_REVOLUTION * 5u)
+
+QE_SIC
+qeaii_drive_state_t* driveII_active_drive(qeaii_t* pc)
+{
+    return &pc->driveII.drives[pc->driveII.active_drive & 1u];
+}
+
+QE_SIC
+void driveII_clear_latch(qeaii_drive_state_t* drive)
+{
+    drive->read_latch = 0;
+    drive->read_latch_ready = false;
+}
+
+QE_SIC
+void driveII_capture_next_byte(qeaii_drive_state_t* drive)
+{
+    if (!drive->is_mount || drive->track >= qeaii_disk_tracks)
+    {
+        driveII_clear_latch(drive);
+        return;
+    }
+
+    if (drive->track_pos >= qeaii_disk_track_size)
+    {
+        drive->track_pos = (uint16_t)(drive->track_pos % qeaii_disk_track_size);
+    }
+
+    drive->read_latch = drive->diskette.data[drive->track * qeaii_disk_track_size + drive->track_pos];
+    drive->read_latch_ready = true;
+    drive->track_pos = (uint16_t)((drive->track_pos + 1u) % qeaii_disk_track_size);
+}
+
+QE_SIC
+void driveII_clock(qeaii_t* pc)
+{
+    if (!pc->driveII.spinning)
+    {
+        return;
+    }
+
+    qeaii_drive_state_t* drive = driveII_active_drive(pc);
+
+    if (drive->is_mount)
+    {
+        drive->spin_accumulator += qeaii_disk_track_size;
+        while (drive->spin_accumulator >= QEAII_DISK_CYCLES_PER_REVOLUTION)
+        {
+            drive->spin_accumulator -= QEAII_DISK_CYCLES_PER_REVOLUTION;
+            driveII_capture_next_byte(drive);
+        }
+    }
+
+    if (!pc->driveII.motor_on)
+    {
+        if (pc->driveII.spin_down_cycles > 0)
+        {
+            pc->driveII.spin_down_cycles--;
+        }
+        else
+        {
+            pc->driveII.spinning = false;
+            driveII_clear_latch(drive);
+        }
+    }
+}
+
 QE_API_IMPL
 void qeaii_mount_disk0(qeaii_t* pc, qeaii_diskette_t* diskette)
 {
-    pc->driveII.drives[0].is_mount = true;
-    pc->driveII.drives[0].diskette.changed = false;
-    QE_COPY_OBJ(pc->driveII.drives[0].diskette, *diskette);
+    qeaii_drive_state_t* drive = &pc->driveII.drives[0];
+    drive->is_mount = true;
+    drive->track_pos = 0;
+    drive->spin_accumulator = 0;
+    driveII_clear_latch(drive);
+    QE_COPY_OBJ(drive->diskette, *diskette);
+    drive->diskette.changed = false;
 }
 
 QE_API_IMPL
 void qeaii_unmount_disk0(qeaii_t* pc)
 {
-    pc->driveII.drives[0].is_mount = false;
+    qeaii_drive_state_t* drive = &pc->driveII.drives[0];
+    drive->is_mount = false;
+    driveII_clear_latch(drive);
 }
 
 QE_SIC
@@ -342,14 +426,18 @@ void driveII_init(qeaii_t* pc, qeaii_bootstrap_t* bootstrap)
     QE_CLEAR_OBJ(pc->driveII);
     if (bootstrap->mount_disk0)
     {
-        pc->driveII.drives[0].is_mount = true;
-        QE_COPY_OBJ(pc->driveII.drives[0].diskette, bootstrap->disk0);
+        qeaii_drive_state_t* drive = &pc->driveII.drives[0];
+        drive->is_mount = true;
+        QE_COPY_OBJ(drive->diskette, bootstrap->disk0);
+        drive->diskette.changed = false;
+        driveII_clear_latch(drive);
     }
 }
 
 QE_SIC
 void driveII_phase_on(qeaii_drive_state_t* drive, uint8_t phase)
 {
+    uint16_t old_track = drive->track;
     drive->phases[phase] = true;
     uint8_t direction = (uint8_t)( (phase - drive->phase + 4) % 4 );
     if (direction == 1)
@@ -368,86 +456,118 @@ void driveII_phase_on(qeaii_drive_state_t* drive, uint8_t phase)
             drive->track--;
         }
     }
+
+    if (drive->track != old_track)
+    {
+        drive->read_latch_ready = false;
+    }
 }
 
 QE_SIC
-uint8_t driveII_latch_event(qeaii_drive_state_t* drive, uint8_t data, bool sw_reading)
+uint8_t driveII_read_latch(qeaii_drive_state_t* drive)
 {
-    if (drive->q7)
+    if (!drive->is_mount)
     {
-        if (!drive->q6)
+        return 0x00;
+    }
+
+    if (!drive->read_latch_ready)
+    {
+        return (uint8_t)(drive->read_latch & 0x7fu);
+    }
+
+    drive->read_latch_ready = false;
+    return drive->read_latch;
+}
+
+QE_SIC
+uint8_t driveII_latch_event(qeaii_t* pc,
+                            qeaii_drive_state_t* drive,
+                            uint8_t softswitch,
+                            uint8_t data,
+                            bool sw_reading)
+{
+    if (pc->driveII.q7)
+    {
+        if (!pc->driveII.q6)
         {
             return 0x80;
         }
-        if (!sw_reading && !drive->diskette.readonly) // switch not reading (switch writing)
+        if (!sw_reading && drive->is_mount && !drive->diskette.readonly)
         {
-            drive->diskette.data[ drive->track * qeaii_disk_track_size + drive->track_pos] = data;
-            drive->track_pos = (uint16_t)( (drive->track_pos + 1) % qeaii_disk_track_size );
+            drive->diskette.data[drive->track * qeaii_disk_track_size + drive->track_pos] = data;
             drive->diskette.changed = true;
         }
-        return 0x0;
+        return 0x00;
     }
-    else
-    {
-        if (drive->q6)
-        {
-            return drive->diskette.readonly ? 0xff : 0; // return write-protected flag
-        }
 
-        // read mode and cpu do not need info
-        // prepare and retun the data
-        if (drive->phase != 0 && drive->phase != 2)
-        {
-            return 0x0;
-        }
-        uint8_t latch = drive->diskette.data[ drive->track * qeaii_disk_track_size + drive->track_pos];
-        drive->track_pos = (uint16_t)( (drive->track_pos + 1) % qeaii_disk_track_size );
-        return latch;
+    if (pc->driveII.q6)
+    {
+        return (drive->is_mount && drive->diskette.readonly) ? 0xff : 0x00;
     }
+
+    /* Even reads in the Disk II I/O range return the data latch; odd accesses
+     * only flip the selected softswitch. */
+    if (sw_reading && ((softswitch & 1u) == 0u))
+    {
+        return driveII_read_latch(drive);
+    }
+
+    return 0x00;
 }
 
 QE_SIC
 uint8_t driveII_process_softswitch(qeaii_t* pc, uint8_t softswitch, uint8_t data, bool sw_reading)
 {
-    qeaii_drive_state_t* drive = &pc->driveII.drives[ pc->driveII.active_drive ];
-    if (!drive->is_mount)
-    {
-        return 0x0;
-    }
-    if (!pc->driveII.spinning)
-    {
-        if (softswitch == 0xe9)
-        {
-            // Disk spinning
-            pc->driveII.spinning = true;
-        }
-        return 0x0;
-    }
+    qeaii_drive_state_t* drive = driveII_active_drive(pc);
 
     switch (softswitch)
     {
     // Track step movement phases [0; 3]
-    case 0xe0:   drive->phases[0] = false;        return 0x00;
-    case 0xe1:   driveII_phase_on(drive, 0);         return 0x00;
-    case 0xe2:   drive->phases[1] = false;        return 0x00;
-    case 0xe3:   driveII_phase_on(drive, 1);         return 0x00;
-    case 0xe4:   drive->phases[2] = false;        return 0x00;
-    case 0xe5:   driveII_phase_on(drive, 2);         return 0x00;
-    case 0xe6:   drive->phases[3] = false;        return 0x00;
-    case 0xe7:   driveII_phase_on(drive, 3);         return 0x00;
+    case 0xe0:   drive->phases[0] = false;        break;
+    case 0xe1:   driveII_phase_on(drive, 0);      break;
+    case 0xe2:   drive->phases[1] = false;        break;
+    case 0xe3:   driveII_phase_on(drive, 1);      break;
+    case 0xe4:   drive->phases[2] = false;        break;
+    case 0xe5:   driveII_phase_on(drive, 2);      break;
+    case 0xe6:   drive->phases[3] = false;        break;
+    case 0xe7:   driveII_phase_on(drive, 3);      break;
     // Disk spinning
-    case 0xe8:   pc->driveII.spinning = false;    return 0x0;
+    case 0xe8:
+        if (pc->driveII.motor_on)
+        {
+            pc->driveII.motor_on = false;
+            pc->driveII.spin_down_cycles = QEAII_DISK_SPINDOWN_CYCLES;
+        }
+        break;
+    case 0xe9:
+        pc->driveII.motor_on = true;
+        pc->driveII.spinning = true;
+        pc->driveII.spin_down_cycles = 0;
+        break;
     // Select drive
-    case 0xeA:   pc->driveII.active_drive = 0;       return 0x00;
-    case 0xeB:   pc->driveII.active_drive = 1;       return 0x00;
-    // Data read/write
-    case 0xeC:   drive->q6 = false;               return driveII_latch_event(drive, data, sw_reading);
-    case 0xeD:   drive->q6 = true;                return driveII_latch_event(drive, data, sw_reading);
-    case 0xeE:   drive->q7 = false;               return driveII_latch_event(drive, data, sw_reading);
-    case 0xeF:   drive->q7 = true;                return driveII_latch_event(drive, data, sw_reading);
+    case 0xeA:
+        pc->driveII.active_drive = 0;
+        drive = driveII_active_drive(pc);
+        break;
+    case 0xeB:
+        pc->driveII.active_drive = 1;
+        drive = driveII_active_drive(pc);
+        break;
+    // Q6/Q7 controller latches
+    case 0xeC:   pc->driveII.q6 = false;          break;
+    case 0xeD:   pc->driveII.q6 = true;           break;
+    case 0xeE:   pc->driveII.q7 = false;          break;
+    case 0xeF:   pc->driveII.q7 = true;           break;
     default: break;
     }
-    return 0x00;
+
+    if (!pc->driveII.spinning)
+    {
+        return 0x00;
+    }
+
+    return driveII_latch_event(pc, drive, softswitch, data, sw_reading);
 }
 
 QE_SIC
@@ -609,6 +729,7 @@ uint32_t qeaii_run(qeaii_t* pc, uint32_t max_cycles)
         video_clock(pc);
         bus_clock(pc);
         cpu_clock(pc);
+        driveII_clock(pc);
         if (pc->stop_flags)
         {
             break;
