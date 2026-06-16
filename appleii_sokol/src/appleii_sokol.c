@@ -73,6 +73,7 @@ typedef struct {
     sg_pass_action pass_action;
 
     bool booted;
+    bool frame_upload_pending;
 } app_state_t;
 
 static app_state_t s_app;
@@ -231,12 +232,15 @@ static void frame_rgb_to_rgba(void)
     }
 }
 
-static void upload_current_frame(void)
+static void build_current_frame_pixels(void)
 {
     qeaii_frame_t* frame = qeaii_frame(&s_app.apple);
     qeaii_to_rgb(frame, s_app.rgb);
     frame_rgb_to_rgba();
+}
 
+static void upload_current_frame_once(void)
+{
     sg_image_data image_data;
     memset(&image_data, 0, sizeof(image_data));
     image_data.mip_levels[0].ptr = s_app.rgba;
@@ -276,7 +280,8 @@ static void run_machine_for_this_frame(void)
         }
         done += chunk;
         if (qeaii_frame_ready(&s_app.apple)) {
-            upload_current_frame();
+            build_current_frame_pixels();
+            s_app.frame_upload_pending = true;
         }
     }
 }
@@ -350,6 +355,8 @@ static void make_graphics_resources(void)
     image_desc.width = QEAII_SCREEN_WIDTH;
     image_desc.height = QEAII_SCREEN_HEIGHT;
     image_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
+    image_desc.data.mip_levels[0].ptr = s_app.rgba;
+    image_desc.data.mip_levels[0].size = sizeof(s_app.rgba);
     image_desc.label = "appleii-frame";
     s_app.image = sg_make_image(&image_desc);
 
@@ -492,12 +499,17 @@ static void init_cb(void)
         return;
     }
     s_app.booted = true;
-    upload_current_frame();
+    build_current_frame_pixels();
+    s_app.frame_upload_pending = true;
 }
 
 static void frame_cb(void)
 {
     run_machine_for_this_frame();
+    if (s_app.frame_upload_pending) {
+        upload_current_frame_once();
+        s_app.frame_upload_pending = false;
+    }
     draw_frame();
 }
 
