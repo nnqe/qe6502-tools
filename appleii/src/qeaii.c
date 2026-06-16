@@ -258,7 +258,10 @@ void video_clock(qeaii_t* pc)
             {
                 video->col = 0;
                 video->line++;
-                video->offsets = s_video_offsets[video->line] + video_address(pc);
+                if (video->line < qeaii_height)
+                {
+                    video->offsets = s_video_offsets[video->line] + video_address(pc);
+                }
             }
         }
     }
