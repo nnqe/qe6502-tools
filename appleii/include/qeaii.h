@@ -15,6 +15,9 @@
 #ifndef QEAII_H
 #define QEAII_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #include <qe6502/qe6502.h>
 
 #ifndef QEAII_STATIC_ASSERT
@@ -36,6 +39,7 @@
 #define QE_SIC static inline
 #define QE_API_IMPL
 
+QEAII_MAYBE_UNUSED
 static const uint16_t qeaii_width = 280;
 static const uint16_t qeaii_height = 192;
 static const uint16_t qeaii_frame_size = (280 * 192) / 7; // 7 pixels per byte
@@ -48,18 +52,6 @@ static const uint16_t qeaii_disk_tracks = 35;
 static const uint16_t qeaii_disk_track_size = 0x1a00;
 static const uint8_t qeaii_flag_cpu_error = (1 << 7);
 static const uint8_t qeaii_flag_new_frame = (1 << 0);
-
-QEAII_MAYBE_UNUSED(qeaii_width);
-QEAII_MAYBE_UNUSED(qeaii_height);
-QEAII_MAYBE_UNUSED(qeaii_frame_size);
-QEAII_MAYBE_UNUSED(qeaii_pixels_per_clock);
-QEAII_MAYBE_UNUSED(qeaii_total_clocks_per_line);
-QEAII_MAYBE_UNUSED(qeaii_dummy_lines);
-QEAII_MAYBE_UNUSED(qeaii_clocks_per_line_visible_pixels);
-QEAII_MAYBE_UNUSED(qeaii_disk_tracks);
-QEAII_MAYBE_UNUSED(qeaii_disk_track_size);
-QEAII_MAYBE_UNUSED(qeaii_flag_cpu_error);
-QEAII_MAYBE_UNUSED(qeaii_flag_new_frame);
 
 typedef struct
 {
@@ -101,7 +93,7 @@ typedef struct
 
     uint16_t line;
     uint16_t col;
-    qe_word32_t offsets;
+    uint32_t offsets;
 
     uint8_t current_frame;
     uint16_t frame_pos;
@@ -154,19 +146,15 @@ typedef struct
 typedef struct qeaii_appleII
 {
     qe6502_t cpu;
-    qe6502_cycle_t cycle;
+    qe6502_tick_t cycle;
     qeaii_keyboard_t kbd;
     qeaii_videocard_t video;
     qeaii_speaker_t speaker;
     qeaii_driveII_t driveII;
     qeaii_bus_t bus;
-    bool nmi;
     bool is_ok;
     uint64_t cycle_counter;
     uint8_t stop_flags;
-    user_handler_fn ex_video_handler;
-    user_handler_fn ex_bus_handler;
-    user_handler_fn ex_cpu_handler;
 } qeaii_t;
 
 typedef struct
@@ -176,16 +164,13 @@ typedef struct
     qeaii_diskette_t disk0;
     bool mount_disk0;
     uint16_t first_rom_address;
-    user_handler_fn ex_video_handler;
-    user_handler_fn ex_bus_handler;
-    user_handler_fn ex_cpu_handler;
 } qeaii_bootstrap_t;
 
 QE_API
 bool qeaii_power_on(qeaii_t* pc,
                      qeaii_bootstrap_t* bootstrap);
 QE_API
-void qeaii_break(qeaii_t* pc);
+void qeaii_break(qeaii_t* pc, bool pressed);
 
 QE_API
 qeaii_frame_t* qeaii_frame(qeaii_t* pc);
@@ -193,9 +178,7 @@ qeaii_frame_t* qeaii_frame(qeaii_t* pc);
 // Executes at least `requested_cycles` unless interrupted (e.g. new video frame).
 // Returns the exact number of cycles actually executed
 QE_API
-uint32_t qeaii_run(qeaii_t* pc, uint32_t requested_cycles);
-QE_API
-uint32_t qeaii_run_ex(qeaii_t* pc, uint32_t requested_cycles);
+uint32_t qeaii_run(qeaii_t* pc, uint32_t max_cycles);
 QE_API
 void qeaii_press_key(qeaii_t* pc, uint8_t key);
 QE_API

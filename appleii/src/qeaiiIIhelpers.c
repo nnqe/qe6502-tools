@@ -34,7 +34,7 @@ QE_API_IMPL
 void qeaii_to_audio_samples(const qeaii_speaker_frame_t* frame,
                                     int16_t* output, uint32_t output_size)
 {
-    float cycles = QE_F32(frame->end_cycle - frame->start_cycle) + 1.0f;
+    float cycles = (float)(frame->end_cycle - frame->start_cycle) + 1.0f;
     float samples_per_cycle = (float)(output_size) / (float)(cycles);
 
     uint8_t speaker = frame->speaker_state > 0 ? 0 : 255;
@@ -45,8 +45,8 @@ void qeaii_to_audio_samples(const qeaii_speaker_frame_t* frame,
     if (tick < frame->tick_count)
     {
         next_coeff = (float)(frame->ticks[tick]) * samples_per_cycle;
-        next = QE_U32(next_coeff);
-        next_coeff = QE_F32(next + 1) - next_coeff;
+        next = (uint32_t)(next_coeff);
+        next_coeff = (float)(next + 1) - next_coeff;
     }
     for(unsigned i = 0; i < output_size; i++)
     {
@@ -63,20 +63,20 @@ void qeaii_to_audio_samples(const qeaii_speaker_frame_t* frame,
                 {
                     // decrease
                     speaker = 0;
-                    output[i] -= QE_S16(QE_F32(output[i]) * next_coeff);
+                    output[i] -= (int16_t)((float)(output[i]) * next_coeff);
                 }
                 else
                 {
                     // increase
                     speaker = 255;
-                    output[i] += QE_S16(QE_F32(255 - output[i]) * next_coeff);
+                    output[i] += (int16_t)((float)(255 - output[i]) * next_coeff);
                 }
                 tick++;
                 if (tick < frame->tick_count)
                 {
                     next_coeff = (float)(frame->ticks[tick]) * samples_per_cycle;
-                    next = QE_U32(next_coeff);
-                    next_coeff = QE_F32(next + 1) - next_coeff;
+                    next = (uint32_t)(next_coeff);
+                    next_coeff = (float)(next + 1) - next_coeff;
                 }
                 else
                 {

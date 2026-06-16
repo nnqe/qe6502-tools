@@ -1,16 +1,20 @@
-file(GLOB_RECURSE APPLEII_SOURCE_FILES  ./*.c)
+set(QEAII_SOURCE_FILES
+    src/qeaii.c
+    src/qeaiiIIhelpers.c
+)
 
-add_library(appleII STATIC ${APPLEII_SOURCE_FILES})
+add_library(qeaii STATIC ${QEAII_SOURCE_FILES})
+add_library(qeaii::qeaii ALIAS qeaii)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  target_compile_options(appleII PRIVATE -O3 -DNDEBUG)
+    target_compile_options(qeaii PRIVATE -O3 -DNDEBUG)
 endif()
 
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fno-inline -fno-omit-frame-pointer")
+target_compile_features(qeaii PUBLIC c_std_11)
 
-target_link_libraries(appleII PRIVATE qe6502::static)
+target_link_libraries(qeaii PUBLIC qe6502::static)
 
-target_include_directories(appleII PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+target_include_directories(qeaii PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 

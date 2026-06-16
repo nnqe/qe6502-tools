@@ -13,6 +13,45 @@
  */
 
 #include <qeaii.h>
+#include <string.h>
+
+#define QE_ARRAY_SIZE(arr) ( sizeof(arr) / sizeof((arr)[0]) )
+
+QEAII_MAYBE_UNUSED
+QE_SIC void qe_memset(void* dst, uint8_t value, size_t count)
+{
+    memset(dst, value, count);
+}
+
+QEAII_MAYBE_UNUSED
+QE_SIC void qe_memcpy(void* dst, const void* src, size_t count)
+{
+    memcpy(dst, src, count);
+}
+
+#define QE_CLEAR_OBJ(obj) qe_memset(&(obj), 0, sizeof(obj));
+#define QE_COPY_OBJ(dst, src) qe_memcpy(&(dst), &(src), sizeof(dst));
+
+
+static inline uint8_t msb(uint16_t n)
+{
+    return (uint8_t)(n >> 8);
+}
+
+static inline uint8_t lsb(uint16_t n)
+{
+    return (uint8_t)(n);
+}
+
+static inline uint16_t msw(uint32_t n)
+{
+    return (uint16_t)(n >> 16);
+}
+
+static inline uint16_t lsw(uint32_t n)
+{
+    return (uint16_t)(n);
+}
 
 ///////////////////////////////////////////////////////
 //                  KEYBOARD
@@ -145,10 +184,10 @@ uint8_t video_softswitch_read(qeaii_t* pc, uint8_t softswitch)
 {
     switch (softswitch)
     {
-    case 0x1a: return QE_U8( (pc->video.is_text?1:0)  << 7 );
-    case 0x1b: return QE_U8( (pc->video.is_mixed?1:0) << 7 );
-    case 0x1c: return QE_U8( (pc->video.is_page2?1:0) << 7 );
-    case 0x1d: return QE_U8( (pc->video.is_hires?1:0) << 7 );
+    case 0x1a: return (uint8_t)( (pc->video.is_text?1:0)  << 7 );
+    case 0x1b: return (uint8_t)( (pc->video.is_mixed?1:0) << 7 );
+    case 0x1c: return (uint8_t)( (pc->video.is_page2?1:0) << 7 );
+    case 0x1d: return (uint8_t)( (pc->video.is_hires?1:0) << 7 );
     default: break;
     }
     return (video_softswitch_write(pc, softswitch), 0);
@@ -168,7 +207,7 @@ void video_clock(qeaii_t* pc)
                 (video->is_mixed && video->line >= 160))
             {
                 // draw text
-                uint8_t symbol = bus->memory.data[ video->offsets.lsw.u16 ];
+                uint8_t symbol = bus->memory.data[ lsw(video->offsets) ];
                 uint8_t symbol_line = video->line % 8;
                 uint8_t bitmap_idx = symbol % 64;
 
@@ -192,12 +231,12 @@ void video_clock(qeaii_t* pc)
             else if (video->is_hires)
             {
                 // draw hires
-                frame->bitmap[ video->frame_pos++ ] = bus->memory.data[ video->offsets.msw.u16 ];
+                frame->bitmap[ video->frame_pos++ ] = bus->memory.data[ msw(video->offsets) ];
             }
             else
             {
                 // draw lores
-                uint8_t code = bus->memory.data[ video->offsets.lsw.u16 ];
+                uint8_t code = bus->memory.data[ lsw(video->offsets) ];
                 if (video->line & 0xC) //0b00001100
                 {
                     code >>= 4;
@@ -210,7 +249,7 @@ void video_clock(qeaii_t* pc)
             }
             video->col++;
             // incrementh both counters (text and graphics)
-            video->offsets.u32 += 0x00010001;
+            video->offsets += 0x00010001;
         }
         else
         {
@@ -219,7 +258,7 @@ void video_clock(qeaii_t* pc)
             {
                 video->col = 0;
                 video->line++;
-                video->offsets.u32 = s_video_offsets[video->line] + video_address(pc);
+                video->offsets = s_video_offsets[video->line] + video_address(pc);
             }
         }
     }
@@ -232,7 +271,7 @@ void video_clock(qeaii_t* pc)
             video->frame_pos = 0;
             video->col = 0;
             video->line = 0;
-            video->offsets.u32 = s_video_offsets[0] + video_address(pc);
+            video->offsets = s_video_offsets[0] + video_address(pc);
         }
     }
 }
@@ -271,7 +310,7 @@ void speaker_io(qeaii_t* pc)
     if (frame->tick_count < QE_ARRAY_SIZE(frame->ticks))
     {
         pc->speaker.last_value = !pc->speaker.last_value;
-        frame->ticks[frame->tick_count] = QE_U32(pc->cycle_counter - frame->start_cycle);
+        frame->ticks[frame->tick_count] = (uint32_t)(pc->cycle_counter - frame->start_cycle);
         frame->tick_count++;
     }
 }
@@ -309,10 +348,10 @@ QE_SIC
 void driveII_phase_on(qeaii_drive_state_t* drive, uint8_t phase)
 {
     drive->phases[phase] = true;
-    uint8_t direction = QE_U8( (phase - drive->phase + 4) % 4 );
+    uint8_t direction = (uint8_t)( (phase - drive->phase + 4) % 4 );
     if (direction == 1)
     {
-        drive->phase = QE_U8( (drive->phase + 1) % 4 );
+        drive->phase = (uint8_t)( (drive->phase + 1) % 4 );
         if ((drive->phase & 1) == 0 && drive->track < qeaii_disk_tracks - 1)
         {
             drive->track++;
@@ -320,7 +359,7 @@ void driveII_phase_on(qeaii_drive_state_t* drive, uint8_t phase)
     }
     else if (direction == 3)
     {
-        drive->phase = QE_U8( (drive->phase + 3) % 4 );
+        drive->phase = (uint8_t)( (drive->phase + 3) % 4 );
         if ((drive->phase & 1) && drive->track > 0)
         {
             drive->track--;
@@ -340,7 +379,7 @@ uint8_t driveII_latch_event(qeaii_drive_state_t* drive, uint8_t data, bool sw_re
         if (!sw_reading && !drive->diskette.readonly) // switch not reading (switch writing)
         {
             drive->diskette.data[ drive->track * qeaii_disk_track_size + drive->track_pos] = data;
-            drive->track_pos = QE_U16( (drive->track_pos + 1) % qeaii_disk_track_size );
+            drive->track_pos = (uint16_t)( (drive->track_pos + 1) % qeaii_disk_track_size );
             drive->diskette.changed = true;
         }
         return 0x0;
@@ -359,7 +398,7 @@ uint8_t driveII_latch_event(qeaii_drive_state_t* drive, uint8_t data, bool sw_re
             return 0x0;
         }
         uint8_t latch = drive->diskette.data[ drive->track * qeaii_disk_track_size + drive->track_pos];
-        drive->track_pos = QE_U16( (drive->track_pos + 1) % qeaii_disk_track_size );
+        drive->track_pos = (uint16_t)( (drive->track_pos + 1) % qeaii_disk_track_size );
         return latch;
     }
 }
@@ -432,18 +471,18 @@ void bus_init(qeaii_t* pc, qeaii_bootstrap_t* bootstrap)
 }
 
 QE_SIC
-void bus_write(qeaii_t* pc, qe_word_t address, uint8_t data)
+void bus_write(qeaii_t* pc, uint16_t address, uint8_t data)
 {
-    if (QE_LIKELY( address.u8_msb != 0xc0 ))
+    if ( msb(address) != 0xc0 )
     {
-        if (QE_LIKELY(address.u16 < pc->bus.firts_rom_address))
+        if (address < pc->bus.firts_rom_address)
         {
-            pc->bus.memory.data[address.u16] = data;
+            pc->bus.memory.data[address] = data;
         }
     }
     else
     {
-        uint8_t softswitch = address.u8_lsb;
+        uint8_t softswitch = lsb(address);
         if ((softswitch >= 0x1a && softswitch <= 0x1d) ||
             (softswitch >= 0x50 && softswitch <= 0x57))
         {
@@ -465,15 +504,15 @@ void bus_write(qeaii_t* pc, qe_word_t address, uint8_t data)
 }
 
 QE_SIC
-uint8_t bus_read(qeaii_t* pc, qe_word_t address)
+uint8_t bus_read(qeaii_t* pc, uint16_t address)
 {
-    if (QE_LIKELY( address.u8_msb != 0xc0 ))
+    if ( msb(address) != 0xc0 )
     {
-        return pc->bus.memory.data[address.u16];
+        return pc->bus.memory.data[address];
     }
     else
     {
-        uint8_t softswitch = address.u8_lsb;
+        uint8_t softswitch = lsb(address);
         if ((softswitch >= 0x1a && softswitch <= 0x1d) ||
             (softswitch >= 0x50 && softswitch <= 0x57))
         {
@@ -498,19 +537,15 @@ uint8_t bus_read(qeaii_t* pc, qe_word_t address)
 QE_SIC
 void bus_clock(qeaii_t *pc)
 {
-    qe_word_t address;
-    address.u16 = qe6502_address(&pc->cpu);
-    if (qe6502_has_data(&pc->cpu))
+    if (qe6502_is_write(pc->cycle))
     {
         // Write request
-        uint8_t data = qe6502_data(&pc->cpu);
-        bus_write(pc, address, data);
+        bus_write(pc, pc->cycle.address, pc->cycle.bus);
     }
     else
     {
         // Read request
-        uint8_t data = bus_read(pc, address);
-        qe6502_feed_data(&pc->cpu, data);
+        pc->cycle.bus = bus_read(pc, pc->cycle.address);
     }
 }
 
@@ -521,32 +556,16 @@ void bus_clock(qeaii_t *pc)
 QE_SIC
 void cpu_init(qeaii_t *pc)
 {
-    pc->nmi = false;
-    pc->cycle = qe6502_power_on(&pc->cpu, qe6502_mos);
-    pc->is_ok = qe6502_ok(&pc->cpu);
+    pc->cpu = qe6502_setup(qe6502_model_nmos);
+    pc->cycle = qe6502_restart(&pc->cpu);
+    pc->is_ok = true;
 }
 
 QE_SIC
 void cpu_clock(qeaii_t *pc)
 {
-    pc->cycle = pc->cycle.execute(&pc->cpu);
+    pc->cycle = qe6502_tick(&pc->cpu, pc->cycle.bus);
     pc->cycle_counter++;
-    pc->cycle_counter += pc->cpu.merged;
-    if (!qe6502_ok(&pc->cpu))
-    {
-        pc->stop_flags |= qeaii_flag_cpu_error;
-    }
-}
-
-QE_SIC
-void cpu_handle_nmi(qeaii_t *pc)
-{
-    if (pc->nmi)
-    {
-        pc->cpu.PC.u8_lsb = pc->bus.memory.data[ 0xFFFA ];
-        pc->cpu.PC.u8_msb = pc->bus.memory.data[ 0xFFFB ];
-        pc->nmi = false;
-    }
 }
 
 ///////////////////////////////////////////////////////
@@ -556,10 +575,6 @@ void cpu_handle_nmi(qeaii_t *pc)
 QE_API_IMPL
 bool qeaii_power_on(qeaii_t *pc, qeaii_bootstrap_t* bootstrap)
 {
-    pc->ex_video_handler = bootstrap->ex_video_handler;
-    pc->ex_bus_handler = bootstrap->ex_bus_handler;
-    pc->ex_cpu_handler = bootstrap->ex_cpu_handler;
-
     bus_init(pc, bootstrap);
     kbd_init(pc, bootstrap);
     video_init(pc, bootstrap);
@@ -572,61 +587,31 @@ bool qeaii_power_on(qeaii_t *pc, qeaii_bootstrap_t* bootstrap)
 QE_API_IMPL
 bool qeaii_pc_ok(qeaii_t* pc)
 {
-    return qe6502_ok(&pc->cpu);
+    return true;
 }
 
 QE_API_IMPL
-uint32_t qeaii_run(qeaii_t *pc, uint32_t requested_cycles)
+uint32_t qeaii_run(qeaii_t* pc, uint32_t max_cycles)
 {
     if (!pc->is_ok)
     {
         return 0;
     }
-    uint64_t target_cycles = pc->cycle_counter + requested_cycles;
     pc->stop_flags = 0;
-    cpu_handle_nmi(pc);
     pc->video.blink = pc->cycle_counter & ( 1 << 19 ) ? 1 : 0;
+    uint64_t initial_cycles = pc->cycle_counter;
 
-    while((pc->cycle_counter < target_cycles) && (!pc->stop_flags))
+    for(int c = 0; c < max_cycles; c++)
     {
         video_clock(pc);
         bus_clock(pc);
         cpu_clock(pc);
-    }
-    return QE_U32(pc->cycle_counter - requested_cycles);
-}
-
-QE_API_IMPL
-uint32_t qeaii_run_ex(qeaii_t* pc, uint32_t requested_cycles)
-{
-    if (!pc->is_ok)
-    {
-        return 0;
-    }
-    uint64_t target_cycles = pc->cycle_counter + requested_cycles;
-    pc->stop_flags = 0;
-    cpu_handle_nmi(pc);
-    pc->video.blink = pc->cycle_counter & ( 1 << 19 ) ? 1 : 0;
-
-    while((pc->cycle_counter < target_cycles) && (!pc->stop_flags))
-    {
-        if (QE_NULL == pc->ex_video_handler ||
-            false == pc->ex_video_handler(pc))
+        if (pc->stop_flags)
         {
-            video_clock(pc);
-        }
-        if (QE_NULL == pc->ex_bus_handler ||
-            false == pc->ex_bus_handler(pc))
-        {
-            bus_clock(pc);
-        }
-        if (QE_NULL == pc->ex_cpu_handler ||
-            false == pc->ex_cpu_handler(pc))
-        {
-            cpu_clock(pc);
+            break;
         }
     }
-    return QE_U32(pc->cycle_counter - requested_cycles);
+    return (uint32_t)(pc->cycle_counter - initial_cycles);
 }
 
 QE_API_IMPL
@@ -648,7 +633,7 @@ bool qeaii_frame_ready(qeaii_t *pc)
 }
 
 QE_API_IMPL
-void qeaii_break(qeaii_t *pc)
+void qeaii_break(qeaii_t *pc, bool pressed)
 {
-    pc->nmi = true;
+    qe6502_nmi_assert(&pc->cpu, pressed);
 }
