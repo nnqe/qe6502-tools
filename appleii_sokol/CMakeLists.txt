@@ -19,6 +19,9 @@ if(UNIX AND NOT APPLE)
         message(WARNING "Skipping qeaii_sokol_appleii: X11 development files were not found")
         set(QEAII_SOKOL_APP_AVAILABLE OFF)
     endif()
+
+    check_include_file("alsa/asoundlib.h" QEAII_HAVE_ALSA_ASOUNDLIB_H)
+    find_library(QEAII_ASOUND_LIBRARY NAMES asound)
 endif()
 
 if(NOT QEAII_SOKOL_APP_AVAILABLE)
@@ -47,6 +50,18 @@ target_include_directories(qeaii_sokol_appleii PRIVATE
 
 target_compile_definitions(qeaii_sokol_appleii PRIVATE SOKOL_GLCORE)
 
+set(QEAII_ENABLE_SOKOL_AUDIO ON)
+if(UNIX AND NOT APPLE)
+    if(NOT QEAII_HAVE_ALSA_ASOUNDLIB_H OR NOT QEAII_ASOUND_LIBRARY)
+        message(WARNING "Building qeaii_sokol_appleii without audio: ALSA development files were not found")
+        set(QEAII_ENABLE_SOKOL_AUDIO OFF)
+    endif()
+endif()
+
+if(QEAII_ENABLE_SOKOL_AUDIO)
+    target_compile_definitions(qeaii_sokol_appleii PRIVATE QEAII_ENABLE_SOKOL_AUDIO=1)
+endif()
+
 target_link_libraries(qeaii_sokol_appleii PRIVATE
     qeaii::qeaii
     qe6502_tools_sokol
@@ -59,6 +74,11 @@ if(APPLE)
         "-framework OpenGL"
         "-framework IOKit"
     )
+    if(QEAII_ENABLE_SOKOL_AUDIO)
+        target_link_libraries(qeaii_sokol_appleii PRIVATE
+            "-framework AudioToolbox"
+        )
+    endif()
 elseif(WIN32)
     target_link_libraries(qeaii_sokol_appleii PRIVATE
         opengl32
@@ -66,6 +86,9 @@ elseif(WIN32)
         user32
         shell32
     )
+    if(QEAII_ENABLE_SOKOL_AUDIO)
+        target_link_libraries(qeaii_sokol_appleii PRIVATE ole32)
+    endif()
 else()
     find_library(QEAII_GL_LIBRARY NAMES GL libGL.so.1)
     if(QEAII_GL_LIBRARY)
@@ -83,4 +106,7 @@ else()
         dl
         m
     )
+    if(QEAII_ENABLE_SOKOL_AUDIO)
+        target_link_libraries(qeaii_sokol_appleii PRIVATE ${QEAII_ASOUND_LIBRARY})
+    endif()
 endif()

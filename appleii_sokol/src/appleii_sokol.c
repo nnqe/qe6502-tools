@@ -18,7 +18,7 @@
 #include "qeaiihelpers.h"
 #include "dsk2nib.h"
 
-#ifndef SOKOL_GLCORE
+#if !defined(SOKOL_GLCORE) && !defined(SOKOL_DUMMY_BACKEND)
 #define SOKOL_GLCORE
 #endif
 #define SOKOL_IMPL
@@ -26,6 +26,9 @@
 #include "sokol_gfx.h"
 #include "sokol_glue.h"
 #include "sokol_log.h"
+#if defined(QEAII_ENABLE_SOKOL_AUDIO)
+#include "sokol_audio.h"
+#endif
 
 #ifndef QEAII_PATH_MAX
 #define QEAII_PATH_MAX 4096
@@ -35,7 +38,8 @@ enum {
     QEAII_SCREEN_WIDTH = 280,
     QEAII_SCREEN_HEIGHT = 192,
     QEAII_RGB_STRIDE = QEAII_SCREEN_WIDTH * QEAII_SCREEN_HEIGHT * 3,
-    QEAII_RGBA_STRIDE = QEAII_SCREEN_WIDTH * QEAII_SCREEN_HEIGHT * 4
+    QEAII_RGBA_STRIDE = QEAII_SCREEN_WIDTH * QEAII_SCREEN_HEIGHT * 4,
+    QEAII_AUDIO_CHUNK_NANOS = 8000000
 };
 
 static const uint8_t s_appleii_rom[0x10000] =
@@ -74,6 +78,16 @@ typedef struct {
 
     bool booted;
     bool frame_upload_pending;
+
+#if defined(QEAII_ENABLE_SOKOL_AUDIO)
+    bool audio_started;
+    int audio_sample_rate;
+    int audio_channels;
+    double audio_sample_remainder;
+    size_t audio_capacity_frames;
+    int16_t* audio_i16;
+    float* audio_f32;
+#endif
 } app_state_t;
 
 static app_state_t s_app;
@@ -214,6 +228,7 @@ static bool boot_appleii(const char* disk_path, char* error, size_t error_size)
         set_error(error, error_size, "qeaii_power_on failed");
         return false;
     }
+    (void)qeaii_speaker_frame(&s_app.apple);
 
     return true;
 }
@@ -265,6 +280,154 @@ static uint32_t frame_cycles(void)
     return (cycles == 0) ? 1u : cycles;
 }
 
+static uint32_t audio_chunk_cycles(void)
+{
+    uint32_t cycles = (uint32_t)qeaii_to_cycles(QEAII_AUDIO_CHUNK_NANOS);
+    return (cycles == 0) ? 1u : cycles;
+}
+
+#if defined(QEAII_ENABLE_SOKOL_AUDIO)
+static bool ensure_audio_capacity(size_t frames)
+{
+    if (frames <= s_app.audio_capacity_frames) {
+        return true;
+    }
+
+    size_t new_capacity = (s_app.audio_capacity_frames == 0) ? 512u : s_app.audio_capacity_frames;
+    while (new_capacity < frames) {
+        new_capacity *= 2u;
+    }
+
+    int16_t* new_i16 = (int16_t*)realloc(s_app.audio_i16, new_capacity * sizeof(int16_t));
+    if (new_i16 == NULL) {
+        return false;
+    }
+    s_app.audio_i16 = new_i16;
+
+    int channels = (s_app.audio_channels > 0) ? s_app.audio_channels : 1;
+    float* new_f32 = (float*)realloc(s_app.audio_f32, new_capacity * (size_t)channels * sizeof(float));
+    if (new_f32 == NULL) {
+        return false;
+    }
+    s_app.audio_f32 = new_f32;
+    s_app.audio_capacity_frames = new_capacity;
+    return true;
+}
+
+static uint32_t audio_frames_for_cycles(uint64_t cycles)
+{
+    if ((cycles == 0) || (s_app.audio_sample_rate <= 0)) {
+        return 0;
+    }
+
+    if (cycles > UINT32_MAX) {
+        cycles = UINT32_MAX;
+    }
+
+    double nanos = (double)qeaii_to_nanos((uint32_t)cycles);
+    double exact_frames = (nanos * (double)s_app.audio_sample_rate / 1000000000.0) +
+                          s_app.audio_sample_remainder;
+    uint32_t frames = (uint32_t)exact_frames;
+    s_app.audio_sample_remainder = exact_frames - (double)frames;
+    return frames;
+}
+
+static void make_audio_resources(void)
+{
+    saudio_desc desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.sample_rate = 44100;
+    desc.num_channels = 1;
+    desc.buffer_frames = 2048;
+    desc.packet_frames = 128;
+    desc.num_packets = 64;
+    desc.logger.func = slog_func;
+    saudio_setup(&desc);
+    s_app.audio_started = true;
+
+    if (!saudio_isvalid()) {
+        fprintf(stderr, "qeaii_sokol_appleii: audio backend unavailable, continuing without sound\n");
+        return;
+    }
+
+    s_app.audio_sample_rate = saudio_sample_rate();
+    s_app.audio_channels = saudio_channels();
+    if (s_app.audio_sample_rate <= 0) {
+        s_app.audio_sample_rate = 44100;
+    }
+    if (s_app.audio_channels <= 0) {
+        s_app.audio_channels = 1;
+    }
+}
+
+static void cleanup_audio_resources(void)
+{
+    if (s_app.audio_started) {
+        saudio_shutdown();
+        s_app.audio_started = false;
+    }
+    free(s_app.audio_i16);
+    free(s_app.audio_f32);
+    s_app.audio_i16 = NULL;
+    s_app.audio_f32 = NULL;
+    s_app.audio_capacity_frames = 0;
+}
+
+static void submit_audio_for_executed_cycles(void)
+{
+    qeaii_speaker_frame_t* speaker_frame = qeaii_speaker_frame(&s_app.apple);
+
+    if (!s_app.audio_started || !saudio_isvalid()) {
+        return;
+    }
+
+    /*
+     * The old SDL runner discarded empty speaker frames and also kept audio
+     * quiet while the Disk II motor was spinning.  Preserve that behavior so
+     * a stable speaker output doesn't turn into a DC offset and disk booting
+     * doesn't fill the audio queue with unwanted speaker transitions.
+     */
+    if ((speaker_frame->tick_count == 0) || qeaii_disk_active(&s_app.apple)) {
+        return;
+    }
+
+    uint64_t cycles = 0;
+    if (speaker_frame->end_cycle >= speaker_frame->start_cycle) {
+        cycles = speaker_frame->end_cycle - speaker_frame->start_cycle + 1u;
+    }
+    uint32_t frames = audio_frames_for_cycles(cycles);
+    if (frames == 0) {
+        return;
+    }
+
+    if (!ensure_audio_capacity(frames)) {
+        return;
+    }
+
+    qeaii_to_audio_samples(speaker_frame, s_app.audio_i16, frames);
+
+    int channels = (s_app.audio_channels > 0) ? s_app.audio_channels : 1;
+    for (uint32_t frame = 0; frame < frames; frame++) {
+        float sample = (float)s_app.audio_i16[frame] / 32768.0f;
+        if (sample > 1.0f) {
+            sample = 1.0f;
+        } else if (sample < -1.0f) {
+            sample = -1.0f;
+        }
+        for (int channel = 0; channel < channels; channel++) {
+            s_app.audio_f32[(size_t)frame * (size_t)channels + (size_t)channel] = sample;
+        }
+    }
+
+    (void)saudio_push(s_app.audio_f32, (int)frames);
+}
+#else
+static void submit_audio_for_executed_cycles(void)
+{
+    (void)qeaii_speaker_frame(&s_app.apple);
+}
+#endif
+
 static void run_machine_for_this_frame(void)
 {
     if (!s_app.booted) {
@@ -273,12 +436,16 @@ static void run_machine_for_this_frame(void)
 
     uint32_t requested = frame_cycles();
     uint32_t done = 0;
+    uint32_t audio_chunk = audio_chunk_cycles();
     while (done < requested) {
-        uint32_t chunk = qeaii_run(&s_app.apple, requested - done);
+        uint32_t remaining = requested - done;
+        uint32_t target = (remaining < audio_chunk) ? remaining : audio_chunk;
+        uint32_t chunk = qeaii_run(&s_app.apple, target);
         if (chunk == 0) {
             break;
         }
         done += chunk;
+        submit_audio_for_executed_cycles();
         if (qeaii_frame_ready(&s_app.apple)) {
             build_current_frame_pixels();
             s_app.frame_upload_pending = true;
@@ -452,10 +619,53 @@ static void apple_key(uint8_t code)
     }
 }
 
+static bool handle_control_key(const sapp_event* event)
+{
+    if ((event->modifiers & SAPP_MODIFIER_CTRL) == 0) {
+        return false;
+    }
+
+    if ((event->key_code >= SAPP_KEYCODE_A) && (event->key_code <= SAPP_KEYCODE_Z)) {
+        apple_key((uint8_t)(event->key_code - SAPP_KEYCODE_A + 1));
+        return true;
+    }
+
+    switch (event->key_code) {
+        case SAPP_KEYCODE_SPACE:
+        case SAPP_KEYCODE_2:
+        case SAPP_KEYCODE_GRAVE_ACCENT:
+            apple_key(0x00);
+            return true;
+        case SAPP_KEYCODE_3:
+        case SAPP_KEYCODE_LEFT_BRACKET:
+            apple_key(0x1b);
+            return true;
+        case SAPP_KEYCODE_4:
+        case SAPP_KEYCODE_BACKSLASH:
+            apple_key(0x1c);
+            return true;
+        case SAPP_KEYCODE_5:
+        case SAPP_KEYCODE_RIGHT_BRACKET:
+            apple_key(0x1d);
+            return true;
+        case SAPP_KEYCODE_6:
+            apple_key(0x1e);
+            return true;
+        case SAPP_KEYCODE_7:
+        case SAPP_KEYCODE_MINUS:
+        case SAPP_KEYCODE_SLASH:
+            apple_key(0x1f);
+            return true;
+        default:
+            return false;
+    }
+}
+
 static void handle_key_down(const sapp_event* event)
 {
     switch (event->key_code) {
         case SAPP_KEYCODE_ENTER:
+        case SAPP_KEYCODE_KP_ENTER:
             apple_key(0x0d);
             break;
         case SAPP_KEYCODE_ESCAPE:
@@ -472,12 +682,22 @@ static void handle_key_down(const sapp_event* event)
         case SAPP_KEYCODE_RIGHT:
             apple_key(0x15);
             break;
+        case SAPP_KEYCODE_UP:
+        case SAPP_KEYCODE_PAGE_UP:
+            apple_key(0x0b);
+            break;
+        case SAPP_KEYCODE_DOWN:
+        case SAPP_KEYCODE_PAGE_DOWN:
+            apple_key(0x0a);
+            break;
+        case SAPP_KEYCODE_HOME:
+            apple_key(0x01);
+            break;
+        case SAPP_KEYCODE_END:
+            apple_key(0x05);
+            break;
         default:
-            if ((event->modifiers & SAPP_MODIFIER_CTRL) != 0) {
-                if ((event->key_code >= SAPP_KEYCODE_A) && (event->key_code <= SAPP_KEYCODE_Z)) {
-                    apple_key((uint8_t)(event->key_code - SAPP_KEYCODE_A + 1));
-                }
-            }
+            (void)handle_control_key(event);
             break;
     }
 }
@@ -495,6 +715,9 @@ static void handle_char(uint32_t codepoint)
 static void init_cb(void)
 {
     make_graphics_resources();
+#if defined(QEAII_ENABLE_SOKOL_AUDIO)
+    make_audio_resources();
+#endif
 
     if (!boot_appleii(s_app.disk_path, s_app.error, sizeof(s_app.error))) {
         fprintf(stderr, "qeaii_sokol_appleii: %s\n", s_app.error);
@@ -524,6 +747,9 @@ static void frame_cb(void)
 
 static void cleanup_cb(void)
 {
+#if defined(QEAII_ENABLE_SOKOL_AUDIO)
+    cleanup_audio_resources();
+#endif
     sg_shutdown();
 }
 
